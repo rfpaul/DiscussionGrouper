@@ -26,7 +26,7 @@ afrAmericanProp = 1973 / total
 otherProp = (1017 + 16 + 23 + 164) / total
 
 maleProp = 18345 / total
-femaleProp = 15267 / total
+femaleProp = 1 - maleProp
 
 # Demographic codes
 demoCodes = [0, # White
@@ -50,12 +50,14 @@ genProps = [maleProp, femaleProp]
 leaderProps = [.85, .15]
 
 # Header for CSV file
-header = ["Last", "First", "Score", "Gender", "Ethnicity", "Leader"]
+header = ["ID", "Score", "Gender", "Ethnicity", "Leader"]
 
-# First and last "names" (just letters)
+# First and last "names" (just letters representing initials)
 lastNames = random.sample(capLetters, k = classSize)
 lastNames.sort()
 firstNames = random.choices(capLetters, k = classSize)
+# IDs based on last initial, first initial
+ids = [a + ',' + b for a, b in zip(lastNames, firstNames)]
 
 # Generic random ACT scores with a mean of 30, SD of 4.5, max of 36
 scoreSample =   [n for n in 
@@ -73,7 +75,7 @@ demoSample = random.choices(demoCodes, weights = demoProps, k = classSize)
 perSample = random.choices(binaryCodes, weights = leaderProps, k = classSize)
 
 # Zip lists together to make into rows
-rows = zip(lastNames, firstNames, scoreSample, genSample, demoSample, perSample)
+rows = zip(ids, scoreSample, genSample, demoSample, perSample)
 
 # Get the current file path
 currentPath = os.path.dirname(os.path.realpath(__file__))
