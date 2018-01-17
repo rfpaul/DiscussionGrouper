@@ -1,7 +1,8 @@
 ## DiscussionGrouper
-# This script takes in a file of students in a discussion section, and outputs a file
-# containing groups optimized for peer learning. Optimized groups are determined by
-# the Non-dominated Sorting Genetic Algorithm (NSGA-II) (see Deb, et al. 2002).
+# This script takes in a file of students in a discussion section, and outputs 
+# a file containing groups optimized for peer learning. Optimized groups are 
+# determined by the Non-dominated Sorting Genetic Algorithm (NSGA-II) (see Deb, 
+# et al. 2002).
 
 # 2017-2018 Robert Paul and Elise Nishikawa
 # Corresponding author: robert.f.paul [[at]] gmail [[dot]] com
@@ -31,42 +32,40 @@
 # Per group:
 # Sum of genders is 0, 3, or 4
 # Sum of math score categories is 0 or 1
-# If a minority is present in a group, at least 2 of the same minority are in the group
+# If a minority is present in a group, at least 2 of the same minority are in
+# the group
 # Sum of personality types is 0 or 1
 # For the generated sets of groups:
 # Maximize uniqueness between grouping solutions
 
 ## Package imports
-# Require these packages--install and load if they're not available
-if (!require(GA)) {
-  install.packages("GA")
-  library(GA)
-}
+# Base packages, should load with no problem
+import tkinter as tk
+from tkinter import filedialog
 
-if (!require(foreach)) {
-  install.packages("foreach")
-  library(foreach)
-}
+# **NOTE!** These packages may need to be installed!
+# Install through the command line shell with: pip install <package name here>
+import numpy as np
+import pandas as pd
+from deap import algorithms, base, creator, tools
 
 ## Function definitions
 
 # Encode scores based on percentile rank
-CatScores <-function(scores)
-{
-  # Initialize everyone to category 0 (middle 80%)
-  score_cats = rep(0, length(scores))
-  # Get the top and bottom 10% scores
-  cutoffs <- quantile(scores, c(0.1, 0.9))
-  # Everyone below the 10th and above the 90th percentiles is coded to 1
-  # Everyone else (middle 80%) is coded to 0
-  # 10th percentile or below cutoff
-  score_cats[which(scores <= cutoffs[[1]])] <- 1
-  # 90th percentile or above cutoff
-  score_cats[which(scores >= cutoffs[[2]])] <- 1
+def CatScores(scores):
+    # Initialize everyone to category 0 (middle 80%)
+    score_cats = np.repeat(0, len(scores))
+    # Get the top and bottom 10% scores
+    cutoffs = np.percentile(scores, [10, 90])
+    # Everyone below the 10th and above the 90th percentiles is coded to 1
+    # Everyone else (middle 80%) is coded to 0
+    # 10th percentile or below cutoff
+    score_cats[scores <= cutoffs[0]] = 1
+    # 90th percentile or above cutoff
+    score_cats[scores >= cutoffs[1]] = 1
   
-  # Return vector of categorized scores
-  return(score_cats)
-}
+    # Return vector of categorized scores
+    return score_cats
 
 # Split into groups
 SplitStudents <- function(df)
@@ -127,28 +126,44 @@ SplitStudents <- function(df)
 
 # Read input
 # Ask for file
-myFile <- file.choose()
+root = tk.Tk()
+root.withdraw()
+filePath = filedialog.askopenfilename()
 # Open the file
-classData  <- read.csv(myFile, header=TRUE)
+classData = pd.read_csv(filePath)
 
 # Process input
-classData$Score_Cat <- CatScores(classData$Score)
-initGroup <- SplitStudents(classData)
+classData['Score_Cat'] = CatScores(classData['Score'])
+
+nStudents = len(classData)
+# If we have at least 15 students...
+if nStudents >= 15:
+    # Place them into 5 groups
+    nGroups = 5
+else: # But if we have 14 or fewer students...
+    # Place them into 4 groups
+    nGroups = 4
+
+# Get the initial group arrangement; this is the "chromosome" that will be 
+# permutated, recombined, and optimized
+initArrang = np.tile(range(1, nGroups + 1), 5)[0:nStudents]
 
 # Run genetic algorithm
 
 # Extract and format Pareto-optimal solutions
 
 # Output to file
-# Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
-# ID   Arrangement_A   Arrangement_B   Arrangement_C   Arrangement_D ... Arrangement_n
-# A, A             1               1               2               4
-# B, Q             1               5               5               3
-# C, F             5               3               4               2
-# D, V             2               1               4               1
-# F, C             2               4               1               5
+# Format: CSV file, IDs with numeric group assignments over n columns of group
+# arrangements
+# ID   Arrangement_A   Arrangement_B   Arrangement_C   ... Arrangement_n
+# A, A             1               1               2               
+# B, Q             1               5               5               
+# C, F             5               3               4               
+# D, V             2               1               4               
+# F, C             2               4               1               
 # ...
-write.csv(results, file=file.choose(), row.names = FALSE)
+filePath = filedialog.asksaveasfilename()
+result.to_csv(filePath)
 
 ## First attempt -- for reference
 # StudentList$Race=as.character(StudentList$Race)
