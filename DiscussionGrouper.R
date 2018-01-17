@@ -3,7 +3,7 @@
 # containing groups optimized for peer learning. Optimized groups are determined by
 # the Non-dominated Sorting Genetic Algorithm (NSGA-II) (see Deb, et al. 2002).
 
-# 2017-2018 Elise Nishikawa and Robert Paul
+# 2017-2018 Robert Paul and Elise Nishikawa
 # Corresponding author: robert.f.paul [[at]] gmail [[dot]] com
 # Licensed under GPL v3, see https://www.gnu.org/licenses/gpl.html
 
@@ -23,9 +23,11 @@
 # Raw math/test scores are converted to: middle 80% = 0, bottom or top 10% = 1
 # Personality coded as binary, Leader = 1, other = 0
 
-# Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
 # Formation of 5 groups with 3 or 4 members
+# In smaller classes, 4 groups with 3 or 4 members
+
+# Optimization criteria (roughly by order of decreasing importance):
 # Per group:
 # Sum of genders is 0, 3, or 4
 # Sum of math score categories is 0 or 1
@@ -34,10 +36,11 @@
 # For the generated sets of groups:
 # Maximize uniqueness between grouping solutions
 
-## Require these packages--install and load if they're not available
-if (!require(mco)) {
-  install.packages("mco")
-  library(mco)
+## Package imports
+# Require these packages--install and load if they're not available
+if (!require(ecr)) {
+  install.packages("ecr")
+  library(ecr)
 }
 
 if (!require(foreach)) {
@@ -47,41 +50,104 @@ if (!require(foreach)) {
 
 ## Function definitions
 
-# Encode scores
+# Encode scores based on percentile rank
+CatScores <-function(scores)
+{
+  # Initialize everyone to category 0 (middle 80%)
+  score_cats = rep(0, length(scores))
+  # Get the top and bottom 10% scores
+  cutoffs <- quantile(scores, c(0.1, 0.9))
+  # Everyone below the 10th and above the 90th percentiles is coded to 1
+  # Everyone else (middle 80%) is coded to 0
+  # 10th percentile or below cutoff
+  score_cats[which(scores <= cutoffs[[1]])] <- 1
+  # 90th percentile or above cutoff
+  score_cats[which(scores >= cutoffs[[2]])] <- 1
+  
+  # Return vector of categorized scores
+  return(score_cats)
+}
 
 # Split into groups
+SplitStudents <- function(df, arrangement)
+{
+  splitDf <- split(df, arrangement)
+  
+  # Sort within each data frame in the list by ID column
+  splitDf <- lapply(splitDf, function(df){df[order(df$ID),]})
+  
+  # Return result
+  return(splitDf)
+}
 
 # Evaluate "fitness" for number and sizes of groups
+# +0.1 to fitness per group with 3 or 4 members
+# If all groups meet criteria, fitness set to +1
 
 # Evaluate "fitness" for gender compositions
+# Sum the gender composition of each group
+# +0.1 to fitness per group with a sum of 0, 3, or 4
+# If all groups meet criteria, fitness set to +1
 
 # Evaluate "fitness" for math percentile distributions
+# Sum the score percentile category
+# +0.1 to fitness per group with a sum of 1
+# If all groups meet criteria, fitness set to +1
 
 # Evaluate "fitness" for diversity
 
-# Evaluate "fitness" for only including at most one "leader" personality
+# length(unique(Ethnicity)) == 1
+# +0.1 to fitness per group meeting criteria
+# If all groups meet criteria, fitness set to +1
 
-# Evaluate "fitness" for uniqueness versus previous solutions
+# Evaluate "fitness" for only including at most one "leader" personality
+# Sum the leader category
+# +0.1 to fitness per group with a sum of 1 or 0
+# If all groups meet criteria, fitness set to +1
+
+# Evaluate "fitness" for uniqueness versus previous arrangement solutions
 
 ## Main script run
 
 # Read input
+# Ask for file
+myFile <- file.choose()
+# Open the file
+classData  <- read.csv(myFile, header=TRUE)
 
 # Process input
+nStudents <- nrow(classData)
+# If we have at least 15 students...
+if (nStudents >= 15)
+{
+  # Place them into 5 groups until everyone is assigned
+  nGroups <- 5
+} else # But if we have 14 or fewer students...
+{
+  # Place them into 4 groups until everyone is assigned
+  nGroups <- 4
+}
+initArrang <- rep(1:nGroups, 5)[1:nStudents]
+
+classData$Score_Cat <- CatScores(classData$Score)
+initGroup <- SplitStudents(classData, initArrang)
 
 # Run genetic algorithm
 
 # Extract and format Pareto-optimal solutions
 
 # Output to file
-# Format: IDs with numeric group assignments over n columns of groupings
-# ID   Group_A   Group_B   Group_C   Group_D ... Group_n
-# A, A       1         1         2         4
-# B, Q       1         5         5         3
-# C, F       5         3         4         2
-# D, V       2         1         4         1
-# F, C       2         4         1         5
+# Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
+# ID   Arrangement_A   Arrangement_B   Arrangement_C   Arrangement_D ... Arrangement_n
+# A, A             1               1               2               4
+# B, Q             1               5               5               3
+# C, F             5               3               4               2
+# D, V             2               1               4               1
+# F, C             2               4               1               5
 # ...
+write.csv(results,
+          file=file.choose(filters = c("Comma Delimited Files (.csv)","*.csv")), 
+          row.names = FALSE)
 
 ## First attempt -- for reference
 # StudentList$Race=as.character(StudentList$Race)
