@@ -35,8 +35,6 @@
 # If a minority is present in a group, at least 2 of the same minority are in
 # the group
 # Sum of personality types is 0 or 1
-# For the generated sets of groups:
-# Maximize uniqueness between grouping solutions
 
 ## Package imports
 # Base packages, should load with no problem
@@ -67,38 +65,6 @@ def CatScores(scores):
     # Return vector of categorized scores
     return score_cats
 
-# Split into groups
-SplitStudents <- function(df)
-{
-  nStudents <- nrow(df)
-  # Shuffle the order of the students
-  reindex <- sample(1:nStudents)
-  splitDf <- df[reindex,]
-  # If we have at least 15 students...
-  if (nStudents > 15)
-  {
-    # Place them into 5 groups until everyone is assigned
-    nGroups <- 5
-  }
-  # But if we have 14 or fewer students...
-  else
-  {
-    # Place them into 4 groups until everyone is assigned
-    nGroups <- 4
-  }
-  splitDf <- split(splitDf, rep(1:nGroups, 5)[1:nStudents])
-  
-  # Sort within each data frame in the list by ID column
-  splitDf <- lapply(splitDf, function(df){df[order(df$ID),]})
-  
-  # Return result
-  return(splitDf)
-}
-
-# Evaluate "fitness" for number and sizes of groups
-# +0.1 to fitness per group with 3 or 4 members
-# If all groups meet criteria, fitness set to +1
-
 # Evaluate "fitness" for gender compositions
 # Sum the gender composition of each group
 # +0.1 to fitness per group with a sum of 0, 3, or 4
@@ -128,7 +94,7 @@ SplitStudents <- function(df)
 # Ask for file
 root = tk.Tk()
 root.withdraw()
-filePath = filedialog.askopenfilename()
+filePath = filedialog.askopenfilename(title = "Open discussion class file")
 # Open the file
 classData = pd.read_csv(filePath)
 
@@ -162,7 +128,8 @@ initArrang = np.tile(range(1, nGroups + 1), 5)[0:nStudents]
 # D, V             2               1               4               
 # F, C             2               4               1               
 # ...
-filePath = filedialog.asksaveasfilename()
+filePath = filedialog.asksaveasfilename(title = "Save results", 
+                                        defaultextension = ".csv")
 result.to_csv(filePath)
 
 ## First attempt -- for reference
