@@ -18,26 +18,28 @@
 # CSV file
 # Last name/NetID/hash value or other unique identifier as first column
 # Gender coded as: male=0, female or other=1
+
 # Ethnic background coded as an integer,
 # 0=White, 1=Asian, 2=International, 3=Hispanic, 4=African American, 5=Other
 # Raw math/test scores are converted to: middle 80% = 0, bottom or top 10% = 1
 # Personality coded as binary, Leader = 1, other = 0
 
+# Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
 # Formation of 5 groups with 3 or 4 members
 # In smaller classes, 4 groups with 3 or 4 members
-
-# Optimization criteria (roughly by order of decreasing importance):
 # Per group:
-# Sum of genders is 0, 3, or 4
+# Sum of genders is 0 or equal to group size
 # Sum of math score categories is 0 or 1
 # If a minority is present in a group, at least 2 of the same minority are in the group
+# Also, there is a partial fitness benefit for maximally diverse groups
 # Sum of personality types is 0 or 1
 
 # For the generated sets of groups included in the Hall of Fame:
 # Maximize uniqueness between grouping solutions
 
 ## Package imports
+library(tcltk)
 # Require these packages--install and load if they're not available
 if (!require(ecr)) {
   install.packages("ecr")
@@ -67,6 +69,13 @@ CatScores <-function(scores)
   
   # Return vector of categorized scores
   return(score_cats)
+}
+
+# Attach a GroupID column to the class data frame
+AttachCol <- function(indiv){
+  df <- classData
+  df$GroupID <- indiv
+  return(df)
 }
 
 # Given the data frame and column, return a list of values within the column
@@ -103,22 +112,11 @@ EvalGender <- function(critVals)
   # But first we need to redefine the values in the vector
   sumVec[sumVec == 0 | sumVec == sizeVec] <- .1
   sumVec[sumVec > .1] <- 0
-  fitness <- sum(sumVec)
+  fitnessVal <- sum(sumVec)
   # If all groups meet criteria, fitness set to +1
-  if (length(unique(sumVec)) == 1 & fitness != 0) fitness <- 1
+  if (length(unique(sumVec)) == 1 & fitnessVal != 0) fitnessVal <- 1
   # return fitness value
-  return(fitness)
-  
-  # # Trying something else...
-  # # Does every group have only one gender represented among its members?
-  # genderSplit <- prod((lapply(critVals, function(x) nrow(unique(x)))) == 1)
-  # if (genderSplit) {
-  #   # Homogeneous groups have +1 fitness
-  #   return(1)
-  # } else {
-  #   # Fitness penalty for mixed
-  #   return(0)
-  # }
+  return(fitnessVal)
 }
 
 # Evaluate "fitness" for math percentile distributions AND evaluate "fitness" 
@@ -131,40 +129,102 @@ EvalML <- function(critVals)
   # But first we need to redefine the values in the vector
   critVals[critVals <= 1] <- .1
   critVals[critVals > .1] <- 0
-  fitness <- sum(critVals)
+  fitnessVal <- sum(critVals)
   # If all groups meet criteria, fitness set to +1
-  if (fitness == .1 * length(critVals)) fitness = 1
+  if (fitnessVal == .1 * length(critVals)) fitnessVal = 1
   # return fitness value
-  return(fitness)
+  return(fitnessVal)
 }
 
 # Evaluate "fitness" for diversity
-# Not yet implemented
-
-# length(unique(Ethnicity)) == 1
-# +0.1 to fitness per group meeting criteria
-# If all groups meet criteria, fitness set to +1
+EvalDiversity <- function(critVals) {
+  # If groups are homogeneous, return +1 fitness
+  # +0.1 to fitness per group where a minority isn't the only one of their
+  # ethnicity in the group
+  sumVec <- lapply(critVals, function(x) duplicated(x[x > 0]))
+  sumVec <- as.numeric(lapply(sumVec, sum)) * 0.1
+  # If all groups meet preceding criteria, return +1 fitness
+  if (length(unique(sumVec)) == 1 & sumVec[1] != 0)
+  {
+    return(1)
+  } else {
+    fitnessVal <- sum(sumVec)
+    # Get the size of each group
+    sizeVec <- as.numeric(lapply(critVals, nrow))
+    # Get number of ethnicities in each group
+    sumVec <- as.numeric(lapply(critVals, function(x) nrow(unique(x))))
+    # +0.1 to fitness per group where everyone is a different ethnicity
+    fitnessVal <- fitnessVal + (sum(sumVec[sumVec == sizeVec]) * 0.1)
+    # Improperly sized groups can push fitness above 1.0; return truncated value
+    return(floor(fitnessVal))
+  }
+}
 
 # All the fitness functions wrapped up to return a vector of fitness values
-# **RFP: I know I shouldn't use all these globals in here but I didn't want to pass
+# **RFP: I know I probably shouldn't use all these globals in here but I didn't want to pass
 # a ton of parameters into this and potentially muck things up badly
 MetaFitness <- function(indiv)
 {
-  currGroup <- classData
-  currGroup$GroupID <- indiv
+  currGroup <- AttachCol(indiv)
   result <- c(EvalGroupSize(SplitExtracted(currGroup, "ID")),
               EvalGender(SplitExtracted(currGroup, "Gender")),
               EvalML(SplitExtracted(currGroup, "Score_Cat")),
+              EvalDiversity(SplitExtracted(currGroup, "Ethnicity")),
               EvalML(SplitExtracted(currGroup, "Leader"))
               )
   # Return the weighted results
   return(result * weighting)
 }
 
-# Get all the unique values that max out the parameters
-# Not yet implemented
-UpdateHoF <- function(hof, fit, pop) {
-  
+# Make a list of arrangements, with each group sorted by ID
+VecsToLists <- function(vecList) {
+  arrangList <- foreach(i = 1:length(vecList)) %do% {
+    # Make a grouping with the current candidate arrangement
+    curr <- AttachCol(vecList[[i]])
+    curr <- SplitExtracted(curr, "ID")
+    # Sort the dataframes of each group by ID
+    curr <- lapply(curr, sortByCol, col = "ID")
+    # Sort the arrangement by the first ID of the group
+    curr <- curr[order(sapply(curr, function(x) x$ID[1]))]
+    # Rename the arrangement list
+    names(curr) <- 1:length(curr)
+    curr
+  }
+  return(arrangList)
+}
+
+# Save the unique values that exceed a critical value in a Hall of Fame
+# The critical value is the sum of weighting values * scaling factor
+UpdateHoF <- function(hof, pop, fit, scaling) {
+  # Get the indices where the sum of fitnesses is the sum of weighting, i.e.
+  # maximum optimization value
+  optIndices <- which(colSums(fit) >= sum(weighting) * scaling)
+  if (length(optIndices) > 0) {
+    # Get the unique individual solutions from the population
+    candidates <- unique(pop[optIndices])
+    
+    # Make a list of candidate arrangements, with each group sorted by ID
+    candArrangs <-VecsToLists(candidates) 
+    
+    # Make sure they're not duplicate solutions just with different group numbers;
+    # if there are, update the candidates list and candArrangs
+    arrangOK <- !duplicated(candArrangs)
+    # At least one duplicated value found
+    if (prod(arrangOK) == 0) {
+      candidates <- candidates[arrangOK]
+    }
+    
+    # Merge HoF with candidates
+    hof <- c(hof, candidates)
+    # Make sure they're not duplicate solutions to anything in HoF
+    hof <- unique(hof)
+    hofArrangs <- VecsToLists(hof)
+    arrangOK <- !duplicated(hofArrangs)
+    # At least one duplicated value found
+    if (prod(arrangOK) == 0) {
+      hof <- hof(arrangOK)
+    }
+  }
   return(hof)
 }
 
@@ -172,9 +232,9 @@ UpdateHoF <- function(hof, fit, pop) {
 
 # Read input
 # Ask for file
-myFile <- file.choose()
+inputPath <- tclvalue(tkgetOpenFile(filetypes = "{ {CSV Files} {.csv} }"))
 # Open the file
-classData  <- read.csv(myFile, header=TRUE)
+classData  <- read.csv(inputPath, header=TRUE)
 
 # Process input
 nStudents <- nrow(classData)
@@ -187,30 +247,28 @@ if (nStudents >= 15)
 {
   # Place them into 4 groups
   nGroups <- 4
-}
+} # **NOTE: It might be a good idea to handle classes of 11 or fewer students too
 # Initial group arrangement; this is shuffled to produce the initial population
 initArrang <- rep(1:nGroups, 5)[1:nStudents]
 
 # Categorize the scores into a new column named Score_Cat
 classData$Score_Cat <- CatScores(classData$Score)
 
-initGroup <- classData
-initGroup$GroupID <- initArrang
-
 # Set up and run genetic algorithm
-MU = 50L # Number of individuals
-LAMBDA = 20L # Number of offspring
-MAX.ITER = 100L # Max number of generations
+MU = 200L # Number of individuals
+LAMBDA = 100L # Number of offspring
+MAX.ITER = 500L # Max number of generations
 # Relative weighting of each parameter
-weighting <-  c(1, # Correct number and sizes of groups
-                1, # Homogeneous gender groups
-                1, # At most 1 person outside the middle 80% of scores
+weighting <-  c(20, # Correct number and sizes of groups
+                10, # Homogeneous gender groups
+                8, # At most 1 person outside the middle 80% of scores
+                5, # Within group diversity
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
 
 # Toolbox initialization
-# MetaFitness gives our vector of fitnesses, 4 objectives, maximize objectives
-control <- initECRControl(MetaFitness, n.objectives = 4L, minimize = FALSE)
+# MetaFitness gives our vector of fitnesses, 5 objectives, maximize objectives
+control <- initECRControl(MetaFitness, n.objectives = 5, minimize = FALSE)
 # Initialize the mutation, survival, and reproduction operations
 control <- registerECROperator(control, "mutate", mutScramble)
 control <- registerECROperator(control, "recombine", recUnifCrossover)
@@ -234,8 +292,9 @@ updateLogger(log, population = population, fitness = fitness, n.evals = MU)
 parchive <- initParetoArchive(control)
 updateParetoArchive(parchive, population, fitness)
 
-# Initialize Hall of Fame as an empty list
+# Initialize Hall of Fame and Honorable Mention as empty lists
 hof <- list()
+honMention <- list()
 
 for (i in seq_len(MAX.ITER)) {
   # Generate offspring by recombination and mutation
@@ -260,82 +319,44 @@ for (i in seq_len(MAX.ITER)) {
   population <- sel$population
   fitness <- sel$fitness
   
-  # Update log, Pareto archive, and Hall of Fame with new values
+  # Update log, Pareto archive, and Hall of Fame
   updateLogger(log, population = population, fitness = fitness, n.evals = MU)
   updateParetoArchive(parchive, population, fitness)
-  hof <- UpdateHoF(hof, population, fitness)
+  hof <- UpdateHoF(hof, population, fitness, 1)
+  honMention <- UpdateHoF(hof, population, fitness, 0.85)
 }
 
-# Previous attempt using a "black box" wrapper
-# gaRun <- ecr(fitness.fun = MetaFitness,
-#              n.objectives = 3,
-#              n.dim = 3,
-#              minimize = FALSE,
-#              mu = MU,
-#              lambda = LAMBDA,
-#              lower = lower,
-#              upper = upper,
-#              representation = "permutation",
-#              perm = initArrang,
-#              initial.solutions = population,
-#              parent.selector = selSimple,
-#              survival.selector = selNondom,
-#              terminators = list(stopOnIters(MAX.ITER)))
+# Organize and format best, good, and Pareto-optimal solutions
+# Initialize data frame for export
+results <- data.frame(ID=1:nStudents)
+results$ID <- classData$ID
+# Add best, good, and Pareto solutions as columns
+parInds <- getIndividuals(parchive)
+results <- cbind(results, c(hof, honMention, parInds))
 
-# Extract and format Pareto-optimal solutions
+# Maximum length we'll need for labels in the output
+lens <- c(length(hof), length(honMention), length(parInds))
+maxLen <- max(lens)
+# Build column name templates
+repeats <- ceiling(maxLen / 26)
+labels <- paste0(LETTERS, rep(1:repeats, each = 26))
+# Rename columns
+names(results) <- c('ID',
+                    paste0("Best_", labels)[0:lens[1]],
+                    paste0("Good_", labels)[0:lens[2]],
+                    paste0("Pareto_", labels)[0:lens[3]])
 
 # Output to file
 # Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
-# ID   Arrangement_A   Arrangement_B   Arrangement_C   Arrangement_D ... Arrangement_n
-# A, A             1               1               2               4
-# B, Q             1               5               5               3
-# C, F             5               3               4               2
-# D, V             2               1               4               1
-# F, C             2               4               1               5
+# ID   Best_A1   Best_B1   Good_A1   Good_B1 ... Arrangement_n
+# A, A       1         1         2        4
+# B, Q       1         5         5        3
+# C, F       5         3         4        2
+# D, V       2         1         4        1
+# F, C       2         4         1        5
 # ...
-# write.csv(results,
-#           file=file.choose(filters = c("Comma Delimited Files (.csv)","*.csv")), 
-#           row.names = FALSE)
-
-## First attempt -- for reference
-# StudentList$Race=as.character(StudentList$Race)
-# if(sum(StudentList$Race == "African-American")==1){(StudentList$Race[StudentList$Race%in%"African-American"]<-"Solo")}
-# if(sum(StudentList$Race == "Asian")==1){(StudentList$Race[StudentList$Race%in%"Asian"]<-"Solo")}
-# if(sum(StudentList$Race == "Hispanic")==1){(StudentList$Race[StudentList$Race%in%"Hispanic"]<-"Solo")}
-# 
-# 
-# #Number of groups to divide into
-# A=5
-# #The size of your groups
-# B=4
-# #Setting a starter value to what you want the sum to be
-# D=0
-# #While loop means that it will keep running until you meet the criteria
-# #Each group that fulfills the rules will get a value of 6
-# #If you want to allow one group to have violations of math or personality then you can change E from 0 to 1
-# E=0
-# while(D<((A*6)-E){
-# #assign group number randomly to the student list
-# StudentList$Group=(sample((rep(1:A, each=B)), replace=F))
-# #a matrix holding the values of how well each group fills the rules
-# C=matrix(nrow=A, ncol=1)
-# #Loop through each group
-#     for(i in 1:A){
-#       #Check that there are not more than two males in a group
-# gendercheck=ifelse((nrow(StudentList[StudentList$Gender==1&StudentList$Group==i,]))>2,0,2)
-#   #Check that if there is an ethnic minority in the group, there is at least one other person that shares their ethnicity if possible
-# #If there is only one student of a given ethnic group, we've changed their ethnicity to "Solo" already to not mess up this portion
-# racecheck=  ifelse((sum(StudentList$Race[which(StudentList$Group==i)] == "African-American")==1), 0,
-#       (ifelse((sum(StudentList$Race[which(StudentList$Group==i)]  == "Asian")==1),0,
-#        (ifelse((sum(StudentList$Race[which(StudentList$Group==i)] == "Hispanic")==1),0,2)))))
-# #Make sure that you either have one high scorer with the rest medium OR you have up to two low scorers with the rest medium
-# mathcheck=ifelse((sum(as.numeric(as.character(StudentList$Math[which(StudentList$Group==i)]))))>2,0,1)
-# #Make sure you don't have more than one "Leader" type
-# personalitycheck=ifelse((nrow(StudentList[StudentList$Personality==1&StudentList$Group==i,]))>1,0,1)
-# #Sum the values of whether or not the group in question met the rules 
-#      C[i,1]=(gendercheck+racecheck+mathcheck+personalitycheck)}
-# #Sum all the groups if they met the rules
-# #If this is less than A*6, then the while loop will run over again
-# #Once the while loop is fulfilled, then the dataframe "Student List" will have everyone assigned to a group that fills the rules
-# D=sum(C)}
-# 
+outputPath <- tclvalue(tkgetSaveFile(initialfile = "results.csv",
+                                     filetypes = "{ {CSV Files} {.csv} }"))
+write.csv(results,
+          file=outputPath,
+          row.names = FALSE)
