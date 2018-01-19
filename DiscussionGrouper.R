@@ -36,7 +36,8 @@
 # Sum of personality types is 0 or 1
 
 # For the generated sets of groups included in the Hall of Fame:
-# Maximize uniqueness between grouping solutions
+# Maximize uniqueness between grouping solutions; this is currently done in a fairly "weak" 
+# way that only removes duplicate solutions
 
 ## Package imports
 library(tcltk)
@@ -222,7 +223,7 @@ UpdateHoF <- function(hof, pop, fit, scaling) {
     arrangOK <- !duplicated(hofArrangs)
     # At least one duplicated value found
     if (prod(arrangOK) == 0) {
-      hof <- hof(arrangOK)
+      hof <- hof[arrangOK]
     }
   }
   return(hof)
