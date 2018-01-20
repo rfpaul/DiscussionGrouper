@@ -8,12 +8,15 @@ import csv
 import datetime as dt
 
 # Number of students in the class
-classSize = 20
+classSize = 80
 
 # List of capital letters
 capLetters = ["A","B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
               "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
               "W", "X", "Y", "Z"]
+
+# Two-letter "names" from Aa to Zz
+nameIDs = [i + ',' + j for i in capLetters for j in capLetters]
 
 # Fall 2017 Undergraduate demographic numbers
 total = 33624
@@ -52,12 +55,10 @@ leaderProps = [.85, .15]
 # Header for CSV file
 header = ["ID", "Score", "Gender", "Ethnicity", "Leader"]
 
-# First and last "names" (just letters representing initials)
-lastNames = random.sample(capLetters, k = classSize)
-lastNames.sort()
-firstNames = random.choices(capLetters, k = classSize)
-# IDs based on last initial, first initial
-ids = [a + ',' + b for a, b in zip(lastNames, firstNames)]
+# First and last "names" (just <last initial>,<first initial> format)
+ids = random.sample(nameIDs, k = classSize)
+ids.sort()
+
 
 # Generic random ACT scores with a mean of 30, SD of 4.5, max of 36
 scoreSample =   [n for n in 

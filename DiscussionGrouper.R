@@ -1,4 +1,5 @@
 ## DiscussionGrouper
+#===============================================================================
 # This script takes in a file of students in a discussion section, and outputs a file
 # containing groups optimized for peer learning. Optimized groups are determined by
 # the Non-dominated Sorting Genetic Algorithm (NSGA-II) (see Deb, et al. 2002).
@@ -40,6 +41,7 @@
 # way that only removes duplicate solutions
 
 ## Package imports
+#===============================================================================
 library(tcltk)
 # Require these packages--install and load if they're not available
 if (!require(ecr)) {
@@ -53,6 +55,7 @@ if (!require(foreach)) {
 }
 
 ## Function definitions
+#===============================================================================
 
 # Encode scores based on percentile rank
 CatScores <-function(scores)
@@ -90,10 +93,10 @@ SplitExtracted <- function(df, c)
 
 # Evaluate fitness for size and number of groups
 EvalGroupSize <- function(critVals) {
-  # Check if all the groups have 3 or 4 members and we have the right
-  # number of groups
+  # Check if all the groups have the appropriate number of members and we
+  # have the right number of groups
   sizes <- lapply(critVals, nrow)
-  sizesOK <- prod(sizes == 3 | sizes == 4)
+  sizesOK <- prod(sizes == maxGroupSize | sizes == maxGroupSize - 1)
   if(sizesOK) {
     # Number of groups and sizes ok, fitness +1
     return(1)
@@ -177,23 +180,6 @@ MetaFitness <- function(indiv)
   return(result * weighting)
 }
 
-# Make a list of arrangements, with each group sorted by ID
-VecsToLists <- function(vecList) {
-  arrangList <- foreach(i = 1:length(vecList)) %do% {
-    # Make a grouping with the current candidate arrangement
-    curr <- AttachCol(vecList[[i]])
-    curr <- SplitExtracted(curr, "ID")
-    # Sort the dataframes of each group by ID
-    curr <- lapply(curr, sortByCol, col = "ID")
-    # Sort the arrangement by the first ID of the group
-    curr <- curr[order(sapply(curr, function(x) x$ID[1]))]
-    # Rename the arrangement list
-    names(curr) <- 1:length(curr)
-    curr
-  }
-  return(arrangList)
-}
-
 # Save the unique values that exceed a critical value in a Hall of Fame
 # The critical value is the sum of weighting values * scaling factor
 UpdateHoF <- function(hof, pop, fit, scaling) {
@@ -229,7 +215,25 @@ UpdateHoF <- function(hof, pop, fit, scaling) {
   return(hof)
 }
 
+# Make a list of arrangements, with each group sorted by ID
+VecsToLists <- function(vecList) {
+  arrangList <- foreach(i = 1:length(vecList)) %do% {
+    # Make a grouping with the current candidate arrangement
+    curr <- AttachCol(vecList[[i]])
+    curr <- SplitExtracted(curr, "ID")
+    # Sort the dataframes of each group by ID
+    curr <- lapply(curr, sortByCol, col = "ID")
+    # Sort the arrangement by the first ID of the group
+    curr <- curr[order(sapply(curr, function(x) x$ID[1]))]
+    # Rename the arrangement list
+    names(curr) <- 1:length(curr)
+    curr
+  }
+  return(arrangList)
+}
+
 ## Main script run
+#===============================================================================
 
 # Read input
 # Ask for file
@@ -238,18 +242,13 @@ inputPath <- tclvalue(tkgetOpenFile(filetypes = "{ {CSV Files} {.csv} }"))
 classData  <- read.csv(inputPath, header=TRUE)
 
 # Process input
+# What is the maximum size groups should be?
+maxGroupSize <- 4
+# Number of students in the data file
 nStudents <- nrow(classData)
-# If we have at least 15 students...
-if (nStudents >= 15)
-{
-  # Place them into 5 groups
-  nGroups <- 5
-} else # But if we have 14 or fewer students...
-{
-  # Place them into 4 groups
-  nGroups <- 4
-} # **NOTE: It might be a good idea to handle classes of 11 or fewer students too
-# Initial group arrangement; this is shuffled to produce the initial population
+# Number of groups
+nGroups <- ceiling(nStudents/maxGroupSize)
+# Initial group arrangement of 1,2,3,4,5,1,2,3 ... etc.
 initArrang <- rep(1:nGroups, 5)[1:nStudents]
 
 # Categorize the scores into a new column named Score_Cat
@@ -320,7 +319,7 @@ for (i in seq_len(MAX.ITER)) {
   population <- sel$population
   fitness <- sel$fitness
   
-  # Update log, Pareto archive, and Hall of Fame
+  # Update log, Pareto archive, Hall of Fame, and honorable mention
   updateLogger(log, population = population, fitness = fitness, n.evals = MU)
   updateParetoArchive(parchive, population, fitness)
   hof <- UpdateHoF(hof, population, fitness, 1)
