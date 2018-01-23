@@ -15,7 +15,7 @@ capLetters = ["A","B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
               "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
               "W", "X", "Y", "Z"]
 
-# Two-letter "names" from Aa to Zz
+# Two-letter "names" from A,A to Z,Z
 nameIDs = [i + ',' + j for i in capLetters for j in capLetters]
 
 # Class demographics

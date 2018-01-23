@@ -9,30 +9,31 @@
 # Licensed under GPL v3, see https://www.gnu.org/licenses/gpl.html
 
 # Input data formatting (see examples in test_data):
-# ID	  Score  Sex Ethnicity Leader
-# A, A     35      1          0     1
-# B, Q     30      1          4     0
-# C, F     29      1          0     0
-# D, V     26      1          4     0
-# F, C     29      0          3     0
+# ID	  Score_Cat    Sex   Ethnicity  Personality
+# A, A         -1      1          0             1
+# B, Q          0      1          4             0
+# C, F          0      1          0             0
+# D, V          1      1          4             0
+# F, C          1      0          3             0
 # ...
 # CSV file
 # Last name/NetID/hash value or other unique identifier as first column
 # Sex coded as: male=0, female or other=1
 
 # Ethnic background coded as an integer,
-# 0=White, 1=Asian, 2=International, 3=Hispanic, 4=African American, 5=Other
-# Raw math/test scores are converted to: middle = 0, high = 1, low = -1
+# 0=White, 1=Asian, 2=Hispanic, 3=African American
+# Raw math/test scores are categorized as: middle = 0, high = 1, low = -1
 # Personality coded as binary, Leader = 1, other = 0
 
 # Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
 # All groups consist of 3 or 4 members
 # Per group:
-# Sum of Sexs is 0 or at least group size - 2 (no more than 2 men in group)
+# Sum of sexes is 0 or at least group size - 2 (no more than 2 men in group)
 # Score categories of -1 and 1 do not appear in the same group
-# No minority ethnicity alone in a group (if possible, match ethnicity.
-# If not possible 2 individuals of any underrepresented ethnicity in group)
+# No minority ethnicity alone in a group, and ideally two minorities present.
+# (If possible, match ethnicity. If not possible 2 individuals of any
+# underrepresented ethnicity in group)
 # Sum of personality types is 0 or 1 (maximum 1 leader)
 
 # For the generated sets of groups included in the Hall of Fame:
@@ -135,7 +136,7 @@ EvalScore <- function(critVals)
   # If all the groups are OK, +1 fitness
   if(sum(scoreVec) == 0) {
     return(1)
-  } else {
+  } else { # +Partial fitness for each group meeting criteria
     fitnessVal <- sum(as.numeric(!scoreVec)) * partialFit
     return(fitnessVal)
   }
@@ -171,7 +172,7 @@ EvalDiversity <- function(critVals) {
 # Evaluate "fitness" for only including at most one "leader" personality
 EvalLeader <- function(critVals)
 {
-  # Sum the score or leader category and cast the list as a vector
+  # Sum the leader category and cast the list as a vector
   critVals <- as.numeric(lapply(critVals, sum))
   # +partialFit to fitness per group with a sum of 1 or 0
   # But first we need to redefine the values in the vector
