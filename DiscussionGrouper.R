@@ -27,14 +27,13 @@
 
 # Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
-# Formation of 5 groups with 3 or 4 members
-# In smaller classes, 4 groups with 3 or 4 members
+# All groups consist of 3 or 4 members
 # Per group:
-# Sum of genders is 0 or equal to group size
+# Sum of genders is 0 or at least group size - 2 (no more than 2 men in group)
 # Sum of math score categories is 0 or 1
-# If a minority is present in a group, at least 2 of the same minority are in the group
-# Also, there is a partial fitness benefit for maximally diverse groups
-# Sum of personality types is 0 or 1
+# No minority ethnicity alone in a group (if possible, match ethnicity.
+# If not possible 2 individuals of any underrepresented ethnicity in group)
+# Sum of personality types is 0 or 1 (maximum 1 leader)
 
 # For the generated sets of groups included in the Hall of Fame:
 # Maximize uniqueness between grouping solutions; this is currently done in a fairly "weak" 
@@ -82,8 +81,8 @@ AttachCol <- function(indiv){
   return(df)
 }
 
-# Given the data frame and column, return a list of values within the column
-# and split by group
+# Given the data frame and column, return a list of dataframes with only the
+# specified column and split by group
 SplitExtracted <- function(df, c)
 {
   result <- df[c]
@@ -92,6 +91,7 @@ SplitExtracted <- function(df, c)
 }
 
 # Evaluate fitness for size and number of groups
+# All groups have 3 or 4 members
 EvalGroupSize <- function(critVals) {
   # Check if all the groups have the appropriate number of members and we
   # have the right number of groups
@@ -106,16 +106,17 @@ EvalGroupSize <- function(critVals) {
 }
 
 # Evaluate "fitness" for gender compositions
+# No more than 2 men
 EvalGender <- function(critVals)
 {
   # Sum the gender composition of each group
   sumVec <- as.numeric(lapply(critVals, sum))
   # Get the size of each group
   sizeVec <- as.numeric(lapply(critVals, nrow))
-  # +0.1 to fitness per group with a sum of 0 or sum equal to group size
+  # +partialFit to fitness per group with a sum of 0 or sum at least 2
   # But first we need to redefine the values in the vector
-  sumVec[sumVec == 0 | sumVec == sizeVec] <- .1
-  sumVec[sumVec > .1] <- 0
+  sumVec[sumVec == 0 | sumVec >= 2] <- partialFit
+  sumVec[sumVec > partialFit] <- 0
   fitnessVal <- sum(sumVec)
   # If all groups meet criteria, fitness set to +1
   if (length(unique(sumVec)) == 1 & fitnessVal != 0) fitnessVal <- 1
@@ -129,38 +130,41 @@ EvalML <- function(critVals)
 {
   # Sum the score or leader category and cast the list as a vector
   critVals <- as.numeric(lapply(critVals, sum))
-  # +0.1 to fitness per group with a sum of 1 or 0
+  # +partialFit to fitness per group with a sum of 1 or 0
   # But first we need to redefine the values in the vector
-  critVals[critVals <= 1] <- .1
-  critVals[critVals > .1] <- 0
+  critVals[critVals <= 1] <- partialFit
+  critVals[critVals > partialFit] <- 0
   fitnessVal <- sum(critVals)
   # If all groups meet criteria, fitness set to +1
-  if (fitnessVal == .1 * length(critVals)) fitnessVal = 1
+  if (fitnessVal == partialFit * length(critVals)) fitnessVal = 1
   # return fitness value
   return(fitnessVal)
 }
 
 # Evaluate "fitness" for diversity
+# No minority ethnicity alone in a group (if possible, match ethnicity.
+# If not possible 2 individuals of any underrepresented ethnicity in group)
 EvalDiversity <- function(critVals) {
-  # If groups are homogeneous, return +1 fitness
-  # +0.1 to fitness per group where a minority isn't the only one of their
-  # ethnicity in the group
-  sumVec <- lapply(critVals, function(x) duplicated(x[x > 0]))
-  sumVec <- as.numeric(lapply(sumVec, sum)) * 0.1
-  # If all groups meet preceding criteria, return +1 fitness
-  if (length(unique(sumVec)) == 1 & sumVec[1] != 0)
-  {
+  # List of vectors with non-minorities dropped
+  ethOnly <- lapply(critVals, function(x) x[x > 0])
+  # Number of minorities in each group
+  numEth <- as.numeric(lapply(ethOnly, length))
+  # Number of unique values in the ethOnly list
+  numUniques <- as.numeric(lapply(ethOnly, function(x) length(unique(x))))
+  # Ideally every group will have 2 minorities of the same ethnicity; these are
+  # the indices of these fit values
+  fitIndices <- which(numEth == 2 & numUniques == 1)
+  # Every group is fit, +1 fitness value
+  if (length(fitIndices) == nGroups) {
     return(1)
   } else {
-    fitnessVal <- sum(sumVec)
-    # Get the size of each group
-    sizeVec <- as.numeric(lapply(critVals, nrow))
-    # Get number of ethnicities in each group
-    sumVec <- as.numeric(lapply(critVals, function(x) nrow(unique(x))))
-    # +0.1 to fitness per group where everyone is a different ethnicity
-    fitnessVal <- fitnessVal + (sum(sumVec[sumVec == sizeVec]) * 0.1)
-    # Improperly sized groups can push fitness above 1.0; return truncated value
-    return(floor(fitnessVal))
+    # Partial fitness for each group meeting criteria
+    fitnessVal <- length(fitIndices) * partialFit
+    # Secondary fit values; 2 minorities of different ethnicities
+    # This criterion is worth 75% of the partial fitness for matching ethnicity
+    fitIndices <- which(numEth == 2 & numUniques == 2)
+    fitnessVal <- fitnessVal + (length(fitIndices) * partialFit  * 0.75)
+    return(fitnessVal)
   }
 }
 
@@ -180,11 +184,11 @@ MetaFitness <- function(indiv)
   return(result * weighting)
 }
 
-# Save the unique values that exceed a critical value in a Hall of Fame
+# Save the unique values that meet or exceed a critical value into a Hall of Fame
 # The critical value is the sum of weighting values * scaling factor
 UpdateHoF <- function(hof, pop, fit, scaling) {
-  # Get the indices where the sum of fitnesses is the sum of weighting, i.e.
-  # maximum optimization value
+  # Get the indices where the sum of fitnesses is at least the sum of 
+  # weighting * scale factor
   optIndices <- which(colSums(fit) >= sum(weighting) * scaling)
   if (length(optIndices) > 0) {
     # Get the unique individual solutions from the population
@@ -255,16 +259,21 @@ initArrang <- rep(1:nGroups, 5)[1:nStudents]
 classData$Score_Cat <- CatScores(classData$Score)
 
 # Set up and run genetic algorithm
+# Genetic algorithm variable values
 MU = 200L # Number of individuals
 LAMBDA = 100L # Number of offspring
 MAX.ITER = 500L # Max number of generations
-# Relative weighting of each parameter
+
+# What should be the additive value of partial (per group) fitness?
+partialFit <- .5 / nGroups
+# Relative weighting of each objective
 weighting <-  c(20, # Correct number and sizes of groups
                 10, # Homogeneous gender groups
                 8, # At most 1 person outside the middle 80% of scores
                 5, # Within group diversity
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
+
 
 # Toolbox initialization
 # MetaFitness gives our vector of fitnesses, 5 objectives, maximize objectives
@@ -282,11 +291,18 @@ fitness <- evaluateFitness(control, population)
 
 # Initialize logger
 log <- initLogger(control,
-                  log.stats = list(fitness = list("mean", "HV" = list(
-                    fun = computeHV,
-                    pars = list(ref.point = ref.point)))),
-                  init.size = MAX.ITER)
-updateLogger(log, population = population, fitness = fitness, n.evals = MU)
+                  log.stats = list(fitness = list(
+                    "min",
+                    "mean",
+                    "max",
+                    "HV" = list(fun = computeHV,
+                                pars = list(ref.point = ref.point))
+                  )),
+                  init.size = MAX.ITER + 1)
+updateLogger(log,
+             population = population,
+             fitness = fitness,
+             n.evals = MU)
 
 # Initialize Pareto archive
 parchive <- initParetoArchive(control)
@@ -295,6 +311,8 @@ updateParetoArchive(parchive, population, fitness)
 # Initialize Hall of Fame and Honorable Mention as empty lists
 hof <- list()
 honMention <- list()
+# Benchmark value between 0-1 used as the cutoff of Honorable Mention solutions
+honMentionBench <- 0.60
 
 for (i in seq_len(MAX.ITER)) {
   # Generate offspring by recombination and mutation
@@ -323,7 +341,12 @@ for (i in seq_len(MAX.ITER)) {
   updateLogger(log, population = population, fitness = fitness, n.evals = MU)
   updateParetoArchive(parchive, population, fitness)
   hof <- UpdateHoF(hof, population, fitness, 1)
-  honMention <- UpdateHoF(hof, population, fitness, 0.85)
+  honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
+  
+  # Print progress into console
+  if(i %% 10 == 0) {
+    print(paste("Generation number", i, "of", MAX.ITER, "complete"))
+  }
 }
 
 # Organize and format best, good, and Pareto-optimal solutions
@@ -355,8 +378,10 @@ names(results) <- c('ID',
 # D, V       2         1         4        1
 # F, C       2         4         1        5
 # ...
+# Ask for output file name
 outputPath <- tclvalue(tkgetSaveFile(initialfile = "results.csv",
                                      filetypes = "{ {CSV Files} {.csv} }"))
+# Write output
 write.csv(results,
           file=outputPath,
           row.names = FALSE)
