@@ -8,7 +8,7 @@ import csv
 import datetime as dt
 
 # Number of students in the class
-classSize = 80
+classSize = 20
 
 # List of capital letters
 capLetters = ["A","B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
@@ -18,53 +18,50 @@ capLetters = ["A","B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
 # Two-letter "names" from Aa to Zz
 nameIDs = [i + ',' + j for i in capLetters for j in capLetters]
 
-# Fall 2017 Undergraduate demographic numbers
-total = 33624
-whiteProp = 15061 / total
-asianProp = 6053 / total
-internatProp = 5569 / total
-latinxProp = 3748 / total
-afrAmericanProp = 1973 / total
-# Multi-race + (2x) Native American + Unknown
-otherProp = (1017 + 16 + 23 + 164) / total
+# Class demographics
+whiteProp = 0.488
+asianProp = 0.387
+latinxProp = 0.075
+afrAmericanProp = 0.05
 
-maleProp = 18345 / total
-femaleProp = 1 - maleProp
+maleProp = 0.43
+femaleProp = 0.57
 
 # Demographic codes
 demoCodes = [0, # White
              1, # Asian
-             2, # Foreign
-             3, # Hispanic
-             4, # African American
-             5] # Multi-race + Native American + Unknown
+             2, # Hispanic
+             3] # African American
 
 # Gender codes / personality type codes
 binaryCodes = [0, # Male or non-leader personality type
                1] # Female or leader personality type
 
+# Score category codes
+scoreCodes = [-1, # Low
+              0, # Medium
+              1] # High
+
 # Demographic proportions
-demoProps = [whiteProp, asianProp, internatProp,
-             latinxProp, afrAmericanProp, otherProp]
+demoProps = [whiteProp, asianProp, latinxProp, afrAmericanProp]
 
 genProps = [maleProp, femaleProp]
 
-# Assume 15% of students are "leader" personality types
-leaderProps = [.85, .15]
+# Assume 20% of students are "leader" personality types
+leaderProps = [0.8, 0.2]
+
+# Score proportions; 8% low, 52% medium, 40% high
+scoreProps = [0.08, 0.52, 0.4]
 
 # Header for CSV file
-header = ["ID", "Score", "Gender", "Ethnicity", "Leader"]
+header = ["ID", "Score_Cat", "Sex", "Ethnicity", "Leader"]
 
 # First and last "names" (just <last initial>,<first initial> format)
 ids = random.sample(nameIDs, k = classSize)
 ids.sort()
 
-
-# Generic random ACT scores with a mean of 30, SD of 4.5, max of 36
-scoreSample =   [n for n in 
-                    [int(random.gauss(30, 4.5))
-                     for i in range(0, classSize + 5)]
-                if n <= 36][0:classSize]
+# Generic random ACT scores
+scoreSample = random.choices(scoreCodes, weights = scoreProps, k = classSize)
 
 # Sample of students based on gender proportions
 genSample = random.choices(binaryCodes, weights = genProps, k = classSize)

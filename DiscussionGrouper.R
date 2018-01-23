@@ -9,7 +9,7 @@
 # Licensed under GPL v3, see https://www.gnu.org/licenses/gpl.html
 
 # Input data formatting (see examples in test_data):
-# ID	  Score  Gender Ethnicity Leader
+# ID	  Score  Sex Ethnicity Leader
 # A, A     35      1          0     1
 # B, Q     30      1          4     0
 # C, F     29      1          0     0
@@ -18,19 +18,19 @@
 # ...
 # CSV file
 # Last name/NetID/hash value or other unique identifier as first column
-# Gender coded as: male=0, female or other=1
+# Sex coded as: male=0, female or other=1
 
 # Ethnic background coded as an integer,
 # 0=White, 1=Asian, 2=International, 3=Hispanic, 4=African American, 5=Other
-# Raw math/test scores are converted to: middle 80% = 0, bottom or top 10% = 1
+# Raw math/test scores are converted to: middle = 0, high = 1, low = -1
 # Personality coded as binary, Leader = 1, other = 0
 
 # Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
 # All groups consist of 3 or 4 members
 # Per group:
-# Sum of genders is 0 or at least group size - 2 (no more than 2 men in group)
-# Sum of math score categories is 0 or 1
+# Sum of Sexs is 0 or at least group size - 2 (no more than 2 men in group)
+# Score categories of -1 and 1 do not appear in the same group
 # No minority ethnicity alone in a group (if possible, match ethnicity.
 # If not possible 2 individuals of any underrepresented ethnicity in group)
 # Sum of personality types is 0 or 1 (maximum 1 leader)
@@ -57,22 +57,23 @@ if (!require(foreach)) {
 #===============================================================================
 
 # Encode scores based on percentile rank
-CatScores <-function(scores)
-{
-  # Initialize everyone to category 0 (middle 80%)
-  score_cats = rep(0, length(scores))
-  # Get the top and bottom 10% scores
-  cutoffs <- quantile(scores, c(0.1, 0.9))
-  # Everyone below the 10th and above the 90th percentiles is coded to 1
-  # Everyone else (middle 80%) is coded to 0
-  # 10th percentile or below cutoff
-  score_cats[which(scores <= cutoffs[[1]])] <- 1
-  # 90th percentile or above cutoff
-  score_cats[which(scores >= cutoffs[[2]])] <- 1
-  
-  # Return vector of categorized scores
-  return(score_cats)
-}
+# Deprecated
+# CatScores <-function(scores)
+# {
+#   # Initialize everyone to category 0 (middle 80%)
+#   score_cats = rep(0, length(scores))
+#   # Get the top and bottom 10% scores
+#   cutoffs <- quantile(scores, c(0.1, 0.9))
+#   # Everyone below the 10th and above the 90th percentiles is coded to 1
+#   # Everyone else (middle 80%) is coded to 0
+#   # 10th percentile or below cutoff
+#   score_cats[which(scores <= cutoffs[[1]])] <- -1
+#   # 90th percentile or above cutoff
+#   score_cats[which(scores >= cutoffs[[2]])] <- 1
+# 
+#   # Return vector of categorized scores
+#   return(score_cats)
+# }
 
 # Attach a GroupID column to the class data frame
 AttachCol <- function(indiv){
@@ -105,11 +106,11 @@ EvalGroupSize <- function(critVals) {
   }
 }
 
-# Evaluate "fitness" for gender compositions
+# Evaluate "fitness" for Sex compositions
 # No more than 2 men
-EvalGender <- function(critVals)
+EvalSex <- function(critVals)
 {
-  # Sum the gender composition of each group
+  # Sum the Sex composition of each group
   sumVec <- as.numeric(lapply(critVals, sum))
   # Get the size of each group
   sizeVec <- as.numeric(lapply(critVals, nrow))
@@ -124,21 +125,20 @@ EvalGender <- function(critVals)
   return(fitnessVal)
 }
 
-# Evaluate "fitness" for math percentile distributions AND evaluate "fitness" 
-# for only including at most one "leader" personality
-EvalML <- function(critVals)
+# Evaluate "fitness" for score distributions
+# Score categories of -1 and 1 do not appear in the same group
+EvalScore <- function(critVals)
 {
-  # Sum the score or leader category and cast the list as a vector
-  critVals <- as.numeric(lapply(critVals, sum))
-  # +partialFit to fitness per group with a sum of 1 or 0
-  # But first we need to redefine the values in the vector
-  critVals[critVals <= 1] <- partialFit
-  critVals[critVals > partialFit] <- 0
-  fitnessVal <- sum(critVals)
-  # If all groups meet criteria, fitness set to +1
-  if (fitnessVal == partialFit * length(critVals)) fitnessVal = 1
-  # return fitness value
-  return(fitnessVal)
+  # Do -1 and 1 appear together in a group?
+  scoreVec <- as.numeric(
+    lapply(critVals, function(x) any(x == 1) & any (x == -1)))
+  # If all the groups are OK, +1 fitness
+  if(sum(scoreVec) == 0) {
+    return(1)
+  } else {
+    fitnessVal <- sum(as.numeric(!scoreVec)) * partialFit
+    return(fitnessVal)
+  }
 }
 
 # Evaluate "fitness" for diversity
@@ -168,6 +168,22 @@ EvalDiversity <- function(critVals) {
   }
 }
 
+# Evaluate "fitness" for only including at most one "leader" personality
+EvalLeader <- function(critVals)
+{
+  # Sum the score or leader category and cast the list as a vector
+  critVals <- as.numeric(lapply(critVals, sum))
+  # +partialFit to fitness per group with a sum of 1 or 0
+  # But first we need to redefine the values in the vector
+  critVals[critVals <= 1] <- partialFit
+  critVals[critVals > partialFit] <- 0
+  fitnessVal <- sum(critVals)
+  # If all groups meet criteria, fitness set to +1
+  if (fitnessVal == partialFit * length(critVals)) fitnessVal = 1
+  # return fitness value
+  return(fitnessVal)
+}
+
 # All the fitness functions wrapped up to return a vector of fitness values
 # **RFP: I know I probably shouldn't use all these globals in here but I didn't want to pass
 # a ton of parameters into this and potentially muck things up badly
@@ -175,10 +191,10 @@ MetaFitness <- function(indiv)
 {
   currGroup <- AttachCol(indiv)
   result <- c(EvalGroupSize(SplitExtracted(currGroup, "ID")),
-              EvalGender(SplitExtracted(currGroup, "Gender")),
-              EvalML(SplitExtracted(currGroup, "Score_Cat")),
+              EvalSex(SplitExtracted(currGroup, "Sex")),
+              EvalScore(SplitExtracted(currGroup, "Score_Cat")),
               EvalDiversity(SplitExtracted(currGroup, "Ethnicity")),
-              EvalML(SplitExtracted(currGroup, "Leader"))
+              EvalLeader(SplitExtracted(currGroup, "Leader"))
               )
   # Return the weighted results
   return(result * weighting)
@@ -256,20 +272,20 @@ nGroups <- ceiling(nStudents/maxGroupSize)
 initArrang <- rep(1:nGroups, 5)[1:nStudents]
 
 # Categorize the scores into a new column named Score_Cat
-classData$Score_Cat <- CatScores(classData$Score)
+# classData$Score_Cat <- CatScores(classData$Score)
 
 # Set up and run genetic algorithm
 # Genetic algorithm variable values
 MU = 200L # Number of individuals
 LAMBDA = 100L # Number of offspring
-MAX.ITER = 500L # Max number of generations
+MAX.ITER = 200L # Max number of generations
 
 # What should be the additive value of partial (per group) fitness?
 partialFit <- .5 / nGroups
 # Relative weighting of each objective
 weighting <-  c(20, # Correct number and sizes of groups
-                10, # Homogeneous gender groups
-                8, # At most 1 person outside the middle 80% of scores
+                10, # No more than 2 men in the group
+                8, # No high and low score individuals together
                 5, # Within group diversity
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
@@ -353,8 +369,10 @@ for (i in seq_len(MAX.ITER)) {
 # Initialize data frame for export
 results <- data.frame(ID=1:nStudents)
 results$ID <- classData$ID
+# Only use the Pareto front solutions that have the correct group sizes
+sizePareto <- getFront(parchive)[1,] == weighting[1]
 # Add best, good, and Pareto solutions as columns
-parInds <- getIndividuals(parchive)
+parInds <- getIndividuals(parchive)[sizePareto]
 results <- cbind(results, c(hof, honMention, parInds))
 
 # Maximum length we'll need for labels in the output
@@ -365,9 +383,9 @@ repeats <- ceiling(maxLen / 26)
 labels <- paste0(LETTERS, rep(1:repeats, each = 26))
 # Rename columns
 names(results) <- c('ID',
-                    paste0("Best_", labels)[0:lens[1]],
-                    paste0("Good_", labels)[0:lens[2]],
-                    paste0("Pareto_", labels)[0:lens[3]])
+                    paste0("Best_Grouping_", labels)[0:lens[1]],
+                    paste0("Good_Grouping_", labels)[0:lens[2]],
+                    paste0("Pareto_Grouping_", labels)[0:lens[3]])
 
 # Output to file
 # Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
