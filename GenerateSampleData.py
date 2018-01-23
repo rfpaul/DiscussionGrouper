@@ -54,7 +54,7 @@ leaderProps = [0.8, 0.2]
 scoreProps = [0.08, 0.52, 0.4]
 
 # Header for CSV file
-header = ["ID", "Score_Cat", "Sex", "Ethnicity", "Leader"]
+header = ["ID", "Score_Cat", "Sex", "Ethnicity", "Personality"]
 
 # First and last "names" (just <last initial>,<first initial> format)
 ids = random.sample(nameIDs, k = classSize)

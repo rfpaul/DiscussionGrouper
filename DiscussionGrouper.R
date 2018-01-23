@@ -194,7 +194,7 @@ MetaFitness <- function(indiv)
               EvalSex(SplitExtracted(currGroup, "Sex")),
               EvalScore(SplitExtracted(currGroup, "Score_Cat")),
               EvalDiversity(SplitExtracted(currGroup, "Ethnicity")),
-              EvalLeader(SplitExtracted(currGroup, "Leader"))
+              EvalLeader(SplitExtracted(currGroup, "Personality"))
               )
   # Return the weighted results
   return(result * weighting)
