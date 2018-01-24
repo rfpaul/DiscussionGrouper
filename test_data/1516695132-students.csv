@@ -1,4 +1,4 @@
-ID,Score_Cat,Sex,Ethnicity,Leader
+ID,Score_Cat,Sex,Ethnicity,Personality
 "C,T",0,1,0,0
 "D,N",1,1,1,1
 "F,T",0,0,3,1

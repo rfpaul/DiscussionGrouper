@@ -255,34 +255,15 @@ VecsToLists <- function(vecList) {
 
 ## Main script run
 #===============================================================================
-
-# Read input
-# Ask for file
-inputPath <- tclvalue(tkgetOpenFile(filetypes = "{ {CSV Files} {.csv} }"))
-# Open the file
-classData  <- read.csv(inputPath, header=TRUE)
-
-# Process input
 # What is the maximum size groups should be?
 maxGroupSize <- 4
-# Number of students in the data file
-nStudents <- nrow(classData)
-# Number of groups
-nGroups <- ceiling(nStudents/maxGroupSize)
-# Initial group arrangement of 1,2,3,4,5,1,2,3 ... etc.
-initArrang <- rep(1:nGroups, 5)[1:nStudents]
 
-# Categorize the scores into a new column named Score_Cat
-# classData$Score_Cat <- CatScores(classData$Score)
-
-# Set up and run genetic algorithm
 # Genetic algorithm variable values
-MU = 200L # Number of individuals
-LAMBDA = 100L # Number of offspring
-MAX.ITER = 200L # Max number of generations
+MU = 900L # Number of individuals
+LAMBDA = 400L # Number of offspring
+MAX.ITER = 1000L # Max number of generations
+OBJS = 5L # Number of objectives
 
-# What should be the additive value of partial (per group) fitness?
-partialFit <- .5 / nGroups
 # Relative weighting of each objective
 weighting <-  c(20, # Correct number and sizes of groups
                 10, # No more than 2 men in the group
@@ -292,115 +273,161 @@ weighting <-  c(20, # Correct number and sizes of groups
 ref.point <- weighting # Ideal fitness values
 
 
-# Toolbox initialization
-# MetaFitness gives our vector of fitnesses, 5 objectives, maximize objectives
-control <- initECRControl(MetaFitness, n.objectives = 5, minimize = FALSE)
-# Initialize the mutation, survival, and reproduction operations
-control <- registerECROperator(control, "mutate", mutScramble)
-control <- registerECROperator(control, "recombine", recUnifCrossover)
-control <- registerECROperator(control, "selectForMating", selSimple)
-control <- registerECROperator(control, "selectForSurvival", selNondom)
+# Ask for input folder
+inputDir <- tk_choose.dir(
+  caption = "Open and select folder containing ONLY input files")
+classFiles <- list.files(inputDir)
+# This is a simple filter to include only csv files
+classFiles <- classFiles[grep("*.csv", classFiles)]
+# Ask for output folder
+outputDir <- tk_choose.dir(
+  caption = "Open and select folder for saving results")
 
-# Initialize population of random arrangements
-population <- initPopulation(mu = MU, gen.fun = gen, expr = sample(initArrang))
-# And get the initial fitness
-fitness <- evaluateFitness(control, population)
+# # Ask for file
+# inputPath <- tclvalue(tkgetOpenFile(filetypes = "{ {CSV Files} {.csv} }"))
+# # Open the file
+# classData  <- read.csv(inputPath, header=TRUE)
 
-# Initialize logger
-log <- initLogger(control,
-                  log.stats = list(fitness = list(
-                    "min",
-                    "mean",
-                    "max",
-                    "HV" = list(fun = computeHV,
-                                pars = list(ref.point = ref.point))
-                  )),
-                  init.size = MAX.ITER + 1)
-updateLogger(log,
-             population = population,
-             fitness = fitness,
-             n.evals = MU)
-
-# Initialize Pareto archive
-parchive <- initParetoArchive(control)
-updateParetoArchive(parchive, population, fitness)
-
-# Initialize Hall of Fame and Honorable Mention as empty lists
-hof <- list()
-honMention <- list()
-# Benchmark value between 0-1 used as the cutoff of Honorable Mention solutions
-honMentionBench <- 0.60
-
-for (i in seq_len(MAX.ITER)) {
-  # Generate offspring by recombination and mutation
-  offspring <- recombinate(control = control, 
-                           inds = population,
-                           fitness = fitness, 
-                           lambda = LAMBDA,
-                           p.recomb = 0.8)
-  offspring <- mutate(control,
-                      offspring,
-                      p.mut = 0.3)
+# Loop through all available input folders in inputDir
+for (j in seq_len(length(classFiles))) {
+  # Progress message
+  print(paste("Processing", classFiles[j]))
+  # Read input
+  classData <- read.csv(paste(inputDir, classFiles[j], sep = '/'), header=TRUE)
   
-  # Calculate costs of new arrangment population
-  fitness.o <- evaluateFitness(control, offspring)
+  # Process input
+  # Number of students in the data file
+  nStudents <- nrow(classData)
+  # Number of groups
+  nGroups <- ceiling(nStudents/maxGroupSize)
+  # Initial group arrangement of 1,2,3,4,5,1,2,3 ... etc.
+  initArrang <- rep(1:nGroups, 5)[1:nStudents]
   
-  # Apply selection
-  sel <- replaceMuPlusLambda(control = control,
-                             population = population,
-                             offspring = offspring,
-                             fitness = fitness,
-                             fitness.offspring = fitness.o)
-  population <- sel$population
-  fitness <- sel$fitness
+  # Categorize the scores into a new column named Score_Cat
+  # classData$Score_Cat <- CatScores(classData$Score)
   
-  # Update log, Pareto archive, Hall of Fame, and honorable mention
-  updateLogger(log, population = population, fitness = fitness, n.evals = MU)
+  # Set up and run genetic algorithm
+  # What should be the additive value of partial (per group) fitness?
+  partialFit <- .5 / nGroups
+  
+  # Toolbox initialization
+  # MetaFitness gives our vector of fitnesses, 5 objectives, maximize objectives
+  control <- initECRControl(MetaFitness, n.objectives = OBJS, minimize = FALSE)
+  # Initialize the mutation, survival, and reproduction operations
+  control <- registerECROperator(control, "mutate", mutScramble)
+  control <- registerECROperator(control, "recombine", recUnifCrossover)
+  control <- registerECROperator(control, "selectForMating", selSimple)
+  control <- registerECROperator(control, "selectForSurvival", selNondom)
+  
+  # Initialize population of random arrangements
+  population <- initPopulation(mu = MU,
+                               gen.fun = gen,
+                               expr = sample(initArrang))
+  # And get the initial fitness
+  fitness <- evaluateFitness(control, population)
+  
+  # Initialize logger
+  log <- initLogger(control,
+                    log.stats = list(fitness = list(
+                      "min",
+                      "mean",
+                      "max",
+                      "HV" = list(fun = computeHV,
+                                  pars = list(ref.point = ref.point))
+                    )),
+                    init.size = MAX.ITER + 1)
+  updateLogger(log,
+               population = population,
+               fitness = fitness,
+               n.evals = MU)
+  
+  # Initialize Pareto archive
+  parchive <- initParetoArchive(control)
   updateParetoArchive(parchive, population, fitness)
-  hof <- UpdateHoF(hof, population, fitness, 1)
-  honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
   
-  # Print progress into console
-  if(i %% 10 == 0) {
-    print(paste("Generation number", i, "of", MAX.ITER, "complete"))
+  # Initialize Hall of Fame and Honorable Mention as empty lists
+  hof <- list()
+  honMention <- list()
+  # Benchmark value between 0-1 used as the cutoff of Honorable Mention solutions
+  honMentionBench <- 0.70
+  
+  for (i in seq_len(MAX.ITER)) {
+    # Generate offspring by recombination and mutation
+    offspring <- recombinate(control = control, 
+                             inds = population,
+                             fitness = fitness, 
+                             lambda = LAMBDA,
+                             p.recomb = 0.8)
+    offspring <- mutate(control,
+                        offspring,
+                        p.mut = 0.3)
+    
+    # Calculate costs of new arrangment population
+    fitness.o <- evaluateFitness(control, offspring)
+    
+    # Apply selection
+    sel <- replaceMuPlusLambda(control = control,
+                               population = population,
+                               offspring = offspring,
+                               fitness = fitness,
+                               fitness.offspring = fitness.o)
+    population <- sel$population
+    fitness <- sel$fitness
+    
+    # Update log, Pareto archive, Hall of Fame, and honorable mention
+    updateLogger(log, population = population, fitness = fitness, n.evals = MU)
+    updateParetoArchive(parchive, population, fitness)
+    hof <- UpdateHoF(hof, population, fitness, 1)
+    honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
+    
+    # Print progress into console
+    if(i %% 10 == 0) {
+      print(paste("Generation number", i, "of", MAX.ITER, "complete"))
+    }
   }
+  
+  # Organize and format best, good, and Pareto-optimal solutions
+  # Initialize data frame for export
+  results <- data.frame(ID=1:nStudents)
+  results$ID <- classData$ID
+  # Only use the Pareto front solutions that have the correct group sizes
+  sizePareto <- getFront(parchive)[1,] == weighting[1]
+  # Add best, good, and Pareto solutions as columns
+  parInds <- getIndividuals(parchive)[sizePareto]
+  results <- cbind(results, c(hof, honMention, parInds))
+  
+  # Maximum length we'll need for column labels in the output
+  lens <- c(length(hof), length(honMention), length(parInds))
+  maxLen <- max(lens)
+  # Build column name templates
+  repeats <- ceiling(maxLen / 26)
+  labels <- paste0(LETTERS, rep(1:repeats, each = 26))
+  # Rename columns
+  names(results) <- c('ID',
+                      paste0("Best_Grouping_", labels)[0:lens[1]],
+                      paste0("Good_Grouping_", labels)[0:lens[2]],
+                      paste0("Pareto_Grouping_", labels)[0:lens[3]])
+  
+  # Output to file
+  # Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
+  # ID   Best_A1   Best_B1   Good_A1   Good_B1 ... Arrangement_n
+  # A, A       1         1         2        4
+  # B, Q       1         5         5        3
+  # C, F       5         3         4        2
+  # D, V       2         1         4        1
+  # F, C       2         4         1        5
+  # ...
+  # Generate output name and path
+  outputPath <- paste(outputDir,
+                      paste0(substr(classFiles[j], 0, nchar(classFiles[j]) - 4),
+                             "-results.csv"),
+                      sep = '/')
+  # # Ask for output file name
+  # outputPath <- tclvalue(tkgetSaveFile(initialfile = "results.csv",
+  #                                      filetypes = "{ {CSV Files} {.csv} }"))
+  # Write output
+  write.csv(results,
+            file=outputPath,
+            row.names = FALSE)
+  print(paste("Completed", classFiles[j]))
 }
-
-# Organize and format best, good, and Pareto-optimal solutions
-# Initialize data frame for export
-results <- data.frame(ID=1:nStudents)
-results$ID <- classData$ID
-# Only use the Pareto front solutions that have the correct group sizes
-sizePareto <- getFront(parchive)[1,] == weighting[1]
-# Add best, good, and Pareto solutions as columns
-parInds <- getIndividuals(parchive)[sizePareto]
-results <- cbind(results, c(hof, honMention, parInds))
-
-# Maximum length we'll need for labels in the output
-lens <- c(length(hof), length(honMention), length(parInds))
-maxLen <- max(lens)
-# Build column name templates
-repeats <- ceiling(maxLen / 26)
-labels <- paste0(LETTERS, rep(1:repeats, each = 26))
-# Rename columns
-names(results) <- c('ID',
-                    paste0("Best_Grouping_", labels)[0:lens[1]],
-                    paste0("Good_Grouping_", labels)[0:lens[2]],
-                    paste0("Pareto_Grouping_", labels)[0:lens[3]])
-
-# Output to file
-# Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
-# ID   Best_A1   Best_B1   Good_A1   Good_B1 ... Arrangement_n
-# A, A       1         1         2        4
-# B, Q       1         5         5        3
-# C, F       5         3         4        2
-# D, V       2         1         4        1
-# F, C       2         4         1        5
-# ...
-# Ask for output file name
-outputPath <- tclvalue(tkgetSaveFile(initialfile = "results.csv",
-                                     filetypes = "{ {CSV Files} {.csv} }"))
-# Write output
-write.csv(results,
-          file=outputPath,
-          row.names = FALSE)
