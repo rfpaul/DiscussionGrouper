@@ -54,6 +54,11 @@ if (!require(foreach)) {
   library(foreach)
 }
 
+# if (!require(doParallel)) {
+#   install.packages("doParallel")
+#   library(doParallel)
+# }
+
 ## Function definitions
 #===============================================================================
 
@@ -191,12 +196,12 @@ EvalLeader <- function(critVals)
 MetaFitness <- function(indiv)
 {
   currGroup <- AttachCol(indiv)
+  # Get a vector of all the fitness values
   result <- c(EvalGroupSize(SplitExtracted(currGroup, "ID")),
               EvalSex(SplitExtracted(currGroup, "Sex")),
               EvalScore(SplitExtracted(currGroup, "Score_Cat")),
               EvalDiversity(SplitExtracted(currGroup, "Ethnicity")),
-              EvalLeader(SplitExtracted(currGroup, "Personality"))
-              )
+              EvalLeader(SplitExtracted(currGroup, "Personality")))
   # Return the weighted results
   return(result * weighting)
 }
@@ -204,9 +209,9 @@ MetaFitness <- function(indiv)
 # Save the unique values that meet or exceed a critical value into a Hall of Fame
 # The critical value is the sum of weighting values * scaling factor
 UpdateHoF <- function(hof, pop, fit, scaling) {
-  # Get the indices where the sum of fitnesses is at least the sum of 
-  # weighting * scale factor
-  optIndices <- which(colSums(fit) >= sum(weighting) * scaling)
+  # Get the indices where all the fitnesses are at least greater than or equal to
+  # weighting * scale factors
+  optIndices <- which(colSums(fit >= weighting * scaling) == length(weighting))
   if (length(optIndices) > 0) {
     # Get the unique individual solutions from the population
     candidates <- unique(pop[optIndices])
@@ -255,13 +260,16 @@ VecsToLists <- function(vecList) {
 
 ## Main script run
 #===============================================================================
+# Register parallelization of operations
+# registerDoParallel(cores = 7)
+
 # What is the maximum size groups should be?
 maxGroupSize <- 4
 
 # Genetic algorithm variable values
-MU = 900L # Number of individuals
-LAMBDA = 400L # Number of offspring
-MAX.ITER = 1000L # Max number of generations
+MU = 900L # Number of individuals #900
+LAMBDA = 400L # Number of offspring #400
+MAX.ITER = 1200L # Max number of generations # 1000
 OBJS = 5L # Number of objectives
 
 # Relative weighting of each objective
@@ -272,6 +280,14 @@ weighting <-  c(20, # Correct number and sizes of groups
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
 
+# Benchmark values between 0-1 used as the cutoff of Honorable Mention solutions
+# i.e. fitness values greater than or equal to weighting * honMentionBench 
+# is added to Honorable Mention solutions
+honMentionBench <- c(1.0, # Correct number and sizes of groups
+                     0.2, # No more than 2 men in the group
+                     0.2, # No high and low score individuals together
+                     0.2, # Within group diversity
+                     0.1) # At most 1 leader)
 
 # Ask for input folder
 inputDir <- tk_choose.dir(
@@ -348,8 +364,6 @@ for (j in seq_len(length(classFiles))) {
   # Initialize Hall of Fame and Honorable Mention as empty lists
   hof <- list()
   honMention <- list()
-  # Benchmark value between 0-1 used as the cutoff of Honorable Mention solutions
-  honMentionBench <- 0.70
   
   for (i in seq_len(MAX.ITER)) {
     # Generate offspring by recombination and mutation
@@ -377,7 +391,7 @@ for (j in seq_len(length(classFiles))) {
     # Update log, Pareto archive, Hall of Fame, and honorable mention
     updateLogger(log, population = population, fitness = fitness, n.evals = MU)
     updateParetoArchive(parchive, population, fitness)
-    hof <- UpdateHoF(hof, population, fitness, 1)
+    hof <- UpdateHoF(hof, population, fitness, rep(1, OBJS))
     honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
     
     # Print progress into console
