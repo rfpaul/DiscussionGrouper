@@ -21,7 +21,7 @@
 # Sex coded as: male=0, female or other=1
 
 # Ethnic background coded as an integer,
-# 0=White, 1=Asian, 2=Hispanic, 3=African American
+# 0=White, 1=Asian, 2=Latinx, 3=African American
 # Raw math/test scores are categorized as: middle = 0, high = 1, low = -1
 # Personality coded as binary, Leader = 1, other = 0
 

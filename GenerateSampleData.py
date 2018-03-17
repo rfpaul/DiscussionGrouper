@@ -1,5 +1,6 @@
 # Generate sample discussion section data
-# Uses Python 3.6+
+# Requires Python version 3.6+
+# (c) Robert Paul 2018, licensed under GPL
 
 # Package imports
 import os
@@ -30,7 +31,7 @@ femaleProp = 0.57
 # Demographic codes
 demoCodes = [0, # White
              1, # Asian
-             2, # Hispanic
+             2, # Latinx
              3] # African American
 
 # Gender codes / personality type codes
