@@ -70,5 +70,5 @@ sectionGrouping = results.groupby("Section")
 for name, group in sectionGrouping:
     # Format file name to save as
     outputFile = outputPath +  "/{}-{}.csv".format(name, semester)
-    # Save the section file
+    # Save the section file, overwriting the file if it exists
     group.to_csv(outputFile, index = False)
