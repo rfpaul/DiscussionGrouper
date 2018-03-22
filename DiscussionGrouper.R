@@ -267,9 +267,9 @@ VecsToLists <- function(vecList) {
 maxGroupSize <- 4
 
 # Genetic algorithm variable values
-MU = 90L # Number of individuals #900
-LAMBDA = 40L # Number of offspring #400
-MAX.ITER = 12L # Max number of generations # 1200
+MU = 900L # Number of individuals #900
+LAMBDA = 400L # Number of offspring #400
+MAX.ITER = 1200L # Max number of generations # 1200
 OBJS = 5L # Number of objectives
 
 # Relative weighting of each objective
@@ -445,7 +445,7 @@ for (j in seq_len(length(classFiles))) {
   
   # Generate output name and path
   outputPath <- paste(outputDir,
-                      paste0(substr(classFiles[j], 0, nchar(classFiles[j]) - 4),
+                      paste0(substr(classFiles[j], 1, nchar(classFiles[j]) - 4),
                              "-results.txt"),
                       sep = '/')
   
@@ -469,7 +469,7 @@ for (j in seq_len(length(classFiles))) {
   
   # Write output
   fileConxn <- file(outputPath)
-  writeLines(c(linesOut), fileConxn)
+  writeLines(linesOut, fileConxn)
   close(fileConxn)
   
   print(paste("Completed", classFiles[j]))
