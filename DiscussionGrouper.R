@@ -267,9 +267,9 @@ VecsToLists <- function(vecList) {
 maxGroupSize <- 4
 
 # Genetic algorithm variable values
-MU = 900L # Number of individuals #900
-LAMBDA = 400L # Number of offspring #400
-MAX.ITER = 1200L # Max number of generations # 1000
+MU = 90L # Number of individuals #900
+LAMBDA = 40L # Number of offspring #400
+MAX.ITER = 12L # Max number of generations # 1200
 OBJS = 5L # Number of objectives
 
 # Relative weighting of each objective
@@ -422,8 +422,9 @@ for (j in seq_len(length(classFiles))) {
                       paste0("Good_Grouping_", labels)[0:lens[2]],
                       paste0("Pareto_Grouping_", labels)[0:lens[3]])
   
-  # Output to file
-  # Format: CSV file, IDs with numeric group assignments over n columns of group arrangements
+  # Now we have a results data frame--
+  # results dataframe format: IDs with numeric group assignments over n columns
+  # of group arrangements
   # ID   Best_A1   Best_B1   Good_A1   Good_B1 ... Arrangement_n
   # A, A       1         1         2        4
   # B, Q       1         5         5        3
@@ -431,17 +432,45 @@ for (j in seq_len(length(classFiles))) {
   # D, V       2         1         4        1
   # F, C       2         4         1        5
   # ...
+  
+  # Output to file
+  # Output file format: Text file with group arrangements and IDs listed for
+  # each group
+  # Best_A1
+  # 1: B,Q; L,A; D,S; F,M; A,A
+  # 2: D,V; F,C; W,L; O,M
+  # ...
+  # Arrangement_n
+  # ...
+  
   # Generate output name and path
   outputPath <- paste(outputDir,
                       paste0(substr(classFiles[j], 0, nchar(classFiles[j]) - 4),
-                             "-results.csv"),
+                             "-results.txt"),
                       sep = '/')
-  # # Ask for output file name
-  # outputPath <- tclvalue(tkgetSaveFile(initialfile = "results.csv",
-  #                                      filetypes = "{ {CSV Files} {.csv} }"))
+  
+  # Build up the lines of output in the text file
+  linesOut <- foreach(k = 2:ncol(results), .combine = c) %do% {
+    # Get the current column's name
+    columnResult <- colnames(results)[k]
+    # Get the IDs for every group
+    resultLines <- foreach(l = 1:max(results[k]), .combine = c) %do% {
+      # Get the IDs for the current group
+      currLine <- results[1][results[k] == l]
+      # Format the vector IDs into a single string
+      currLine <- paste(currLine, sep = '', collapse = "; ")
+      # Paste the group number in front of the IDs
+      currLine <- paste(l, currLine, sep = ": ")
+      currLine
+    }
+    columnResult <- c(columnResult, resultLines)
+    columnResult
+  }
+  
   # Write output
-  write.csv(results,
-            file=outputPath,
-            row.names = FALSE)
+  fileConxn <- file(outputPath)
+  writeLines(c(linesOut), fileConxn)
+  close(fileConxn)
+  
   print(paste("Completed", classFiles[j]))
 }
