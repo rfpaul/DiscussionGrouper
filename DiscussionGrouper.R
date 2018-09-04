@@ -25,12 +25,17 @@
 # Raw math/test scores are categorized as: middle = 0, high = 1, low = -1
 # Personality coded as binary, Leader = 1, other = 0
 
+# IMPORTANT! AL1 and Merit sections use slightly different parameters and
+# function definitions. Find these areas in the code where the asterisk *
+# character is repeated 5 times in a row
+
 # Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
-# All groups consist of 3 or 4 members
+# All groups consist of 3 or 4 members (AL1) or 5 or 6 (Merit)
 # Per group:
 # Sum of sexes is 0 or at least group size - 2 (no more than 2 men in group)
-# Score categories of -1 and 1 do not appear in the same group
+# For AL1: Score categories of -1 and 1 do not appear in the same group
+# For Merit: No more than 2 score categories of 1 or -1 in the same group
 # No minority ethnicity alone in a group, and ideally two minorities present.
 # (If possible, match ethnicity. If not possible 2 individuals of any
 # underrepresented ethnicity in group)
@@ -39,6 +44,18 @@
 # For the generated sets of groups included in the Hall of Fame:
 # Maximize uniqueness between grouping solutions; this is currently done in a fairly "weak" 
 # way that only removes duplicate solutions
+
+# Some notes on internals and data processing...
+# The core data structure used for computation is the R list. The ecr package
+# stores fitness values as matrices, where individuals are the columns and the 
+# rows are the objectives. Temporary data storage and access uses data frames.
+# Functions are vectorized whenever possible because this stuff is
+# computationally intensive and any optimization really pays off. If you want
+# to start rewriting or adding things, it's EXTREMELY important that you
+# familiarize yourself with the syntax of constructing and manipulating lists
+# and especially the lapply function.
+# Also I severely exploit the automatic casting of boolean values (TRUE and
+# FALSE) into integer values of 1 and 0 in many vectorized operations.
 
 ## Package imports
 #===============================================================================
@@ -98,7 +115,7 @@ SplitExtracted <- function(df, c)
 }
 
 # Evaluate fitness for size and number of groups
-# All groups have 3 or 4 members
+# All groups have 3-4 members (AL1) or 5-6 members (Merit)
 EvalGroupSize <- function(critVals) {
   # Check if all the groups have the appropriate number of members and we
   # have the right number of groups
@@ -131,7 +148,10 @@ EvalSex <- function(critVals)
   return(fitnessVal)
 }
 
-# Evaluate "fitness" for score distributions
+# ***** IMPORTANT! Comment out and uncomment the appropriate EvalScore function 
+# definitions for AL1 vs Merit section runs
+
+# Evaluate "fitness" for score distributions (AL1)
 # Score categories of -1 and 1 do not appear in the same group
 EvalScore <- function(critVals)
 {
@@ -147,9 +167,24 @@ EvalScore <- function(critVals)
   }
 }
 
+# Evaluate "fitness" for score distributions (Merit)
+# Score categories of -1 or 1 do not appear more than twice in the same group
+# EvalScore <- function(critVals)
+# {
+#   # How often do -1 and 1 appear together in a group?
+#   scoreVec <- as.numeric(lapply(critVals, function(x) sum(abs(x))))
+#   # If all the groups are OK, +1 fitness
+#   if(sum(unique(scoreVec)) <= 1) {
+#     return(1)
+#   } else { # +Partial fitness for each group meeting criteria
+#     fitnessVal <- sum(scoreVec <= 1) * partialFit
+#     return(fitnessVal)
+#   }
+# }
+
 # Evaluate "fitness" for diversity
 # No minority ethnicity alone in a group (if possible, match ethnicity.
-# If not possible 2 individuals of any underrepresented ethnicity in group)
+# If not possible at least 2 individuals of any underrepresented ethnicity in group)
 EvalDiversity <- function(critVals) {
   # List of vectors with non-minorities dropped
   ethOnly <- lapply(critVals, function(x) x[x > 0])
@@ -159,16 +194,16 @@ EvalDiversity <- function(critVals) {
   numUniques <- as.numeric(lapply(ethOnly, function(x) length(unique(x))))
   # Ideally every group will have 2 minorities of the same ethnicity; these are
   # the indices of these fit values
-  fitIndices <- which(numEth == 2 & numUniques == 1)
+  fitIndices <- which(numEth == 2 & numUniques >= 1)
   # Every group is fit, +1 fitness value
   if (length(fitIndices) == nGroups) {
     return(1)
   } else {
     # Partial fitness for each group meeting criteria
     fitnessVal <- length(fitIndices) * partialFit
-    # Secondary fit values; 2 minorities of different ethnicities
+    # Secondary fit values; at least 2 minorities of different ethnicities
     # This criterion is worth 75% of the partial fitness for matching ethnicity
-    fitIndices <- which(numEth == 2 & numUniques == 2)
+    fitIndices <- which(numEth >= 2 & numUniques >= 2)
     fitnessVal <- fitnessVal + (length(fitIndices) * partialFit  * 0.75)
     return(fitnessVal)
   }
@@ -241,6 +276,15 @@ UpdateHoF <- function(hof, pop, fit, scaling) {
   return(hof)
 }
 
+printFitnessStats <- function(fitness) {
+  cat("Ideal values:", sprintf('%.2f', weighting), '\n', sep = '\t')
+  cat("Cutoff values:", sprintf('%.2f', weighting * honMentionBench), '\n', sep = '\t')
+  cat("Fitness max:", sprintf('%.2f', apply(fitness, 1, max)), '\n', sep = '\t')
+  cat("Fitness mean:", sprintf('%.2f', apply(fitness, 1, mean)), '\n', sep = '\t')
+  cat("Fitness SD:", sprintf('%.2f', apply(fitness, 1, sd)), '\n', sep = '\t')
+  cat("Fitness min:", sprintf('%.2f', apply(fitness, 1, min)), '\n\n', sep = '\t')
+}
+
 # Make a list of arrangements, with each group sorted by ID
 VecsToLists <- function(vecList) {
   arrangList <- foreach(i = 1:length(vecList)) %do% {
@@ -263,13 +307,16 @@ VecsToLists <- function(vecList) {
 # Register parallelization of operations
 # registerDoParallel(cores = 7)
 
-# What is the maximum size groups should be?
+# ***** IMPORTANT! Change the maxGroupSize parameter for AL1 vs Merit runs!
+# What is the maximum size groups should be? (AL1)
 maxGroupSize <- 4
+# What is the maximum size groups should be? (Merit)
+# maxGroupSize <- 6
 
 # Genetic algorithm variable values
-MU = 900L # Number of individuals #900
-LAMBDA = 400L # Number of offspring #400
-MAX.ITER = 1200L # Max number of generations # 1200
+MU = 900L # Number of individuals # default: 900
+LAMBDA = 400L # Number of offspring # default: 400
+MAX.ITER = 1200L # Max number of generations # default: 1200
 OBJS = 5L # Number of objectives
 
 # Relative weighting of each objective
@@ -279,13 +326,19 @@ weighting <-  c(20, # Correct number and sizes of groups
                 5, # Within group diversity
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
+weightTags <- c("Group size:",
+                "Gender:",
+                "Math scores:",
+                "Diversity:",
+                "Personality:")
 
 # Benchmark values between 0-1 used as the cutoff of Honorable Mention solutions
 # i.e. fitness values greater than or equal to weighting * honMentionBench 
-# is added to Honorable Mention solutions
+# are added to Honorable Mention solutions
+# These values are overwritten halfway through the run
 honMentionBench <- c(1.0, # Correct number and sizes of groups
-                     0.2, # No more than 2 men in the group
-                     0.2, # No high and low score individuals together
+                     0.4, # No more than 2 men in the group
+                     0, # No high and low score individuals together
                      0.2, # Within group diversity
                      0.1) # At most 1 leader)
 
@@ -317,7 +370,7 @@ for (j in seq_len(length(classFiles))) {
   # Number of groups
   nGroups <- ceiling(nStudents/maxGroupSize)
   # Initial group arrangement of 1,2,3,4,5,1,2,3 ... etc.
-  initArrang <- rep(1:nGroups, 5)[1:nStudents]
+  initArrang <- rep(1:nGroups, ceiling(nStudents/nGroups))[1:nStudents]
   
   # Categorize the scores into a new column named Score_Cat
   # classData$Score_Cat <- CatScores(classData$Score)
@@ -388,17 +441,36 @@ for (j in seq_len(length(classFiles))) {
     population <- sel$population
     fitness <- sel$fitness
     
+    propDone = i / MAX.ITER
+    
     # Update log, Pareto archive, Hall of Fame, and honorable mention
     updateLogger(log, population = population, fitness = fitness, n.evals = MU)
     updateParetoArchive(parchive, population, fitness)
     hof <- UpdateHoF(hof, population, fitness, rep(1, OBJS))
-    honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
+    
+    # Add honorable mention based on the manually set honorable mention
+    # benchmark values
+    # honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
+    
+    # Get the honorable mention benchmark based on mean population values once
+    # we're halfway through the iterations
+    if (propDone == 0.5) {
+      honMentionBench <- rowMeans(fitness) / weighting
+    }
+
+    # Update honorable mention after we're halfway through iterating
+    if (propDone > 0.5) {
+      honMention <- UpdateHoF(hof, population, fitness, honMentionBench)
+    }
     
     # Print progress into console
-    if(i %% 10 == 0) {
+    if(i %% 50 == 0) {
       print(paste("Generation number", i, "of", MAX.ITER, "complete"))
+      printFitnessStats(fitness)
     }
   }
+  
+  print("Iterations complete. Preparing output...")
   
   # Organize and format best, good, and Pareto-optimal solutions
   # Initialize data frame for export
@@ -453,6 +525,10 @@ for (j in seq_len(length(classFiles))) {
   linesOut <- foreach(k = 2:ncol(results), .combine = c) %do% {
     # Get the current column's name
     columnResult <- colnames(results)[k]
+    
+    # Get the fitness values for the current column
+    colFitness <- paste(weightTags, MetaFitness(results[,k]), collapse = '; ')
+    
     # Get the IDs for every group
     resultLines <- foreach(l = 1:max(results[k]), .combine = c) %do% {
       # Get the IDs for the current group
@@ -463,9 +539,17 @@ for (j in seq_len(length(classFiles))) {
       currLine <- paste(l, currLine, sep = ": ")
       currLine
     }
-    columnResult <- c(columnResult, resultLines)
+    columnResult <- c(columnResult, colFitness, resultLines)
+    # Add newline to the end of the column's results
+    columnResult[length(columnResult)] <- paste0(columnResult[length(columnResult)], '\n')
     columnResult
   }
+  
+  # Add a header describing ideal fitness values
+  linesOut <- c("\tMaximum fitness values and relative weighting",
+                paste0('\t', paste(weightTags, weighting, collapse = '; ')),
+                '',
+                linesOut)
   
   # Write output
   fileConxn <- file(outputPath)

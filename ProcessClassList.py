@@ -10,7 +10,7 @@ from tkinter import filedialog
 from tkinter import messagebox
 
 # What is the current semester?
-semester = "SP18"
+semester = "FA18"
 
 # Initialize the dialog boxes
 root = tk.Tk()
@@ -47,10 +47,11 @@ classData = classData.replace('Low', -1)
 classData = classData.replace('Medium', 0)
 classData = classData.replace('High', 1)
 # Code ethnicity
-classData = classData.replace('Caucasian', 0)
+classData = classData.replace('White', 0)
 classData = classData.replace('Asian', 1)
-classData = classData.replace('Latina/o', 2)
-classData = classData.replace('African American', 3)
+classData = classData.replace('Hispanic or Latino', 2)
+classData = classData.replace('Black or African American', 3)
+classData = classData.replace('American Indian or Alaska Native', 4)
 # Code personality
 classData = classData.replace('leader', 1)
 classData.loc[classData.Personality != 1, "Personality"] = 0
