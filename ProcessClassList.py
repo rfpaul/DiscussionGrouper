@@ -10,7 +10,11 @@ from tkinter import filedialog
 from tkinter import messagebox
 
 # What is the current semester?
-semester = "FA18"
+semester = "SP19"
+
+# Which columns are we pulling out?
+useCols = ["ID", "Section", "Sex", "Ethnicity", "First_Gen", "EOP_Status",
+    "Score_Cat", "Personality"]
 
 # Initialize the dialog boxes
 root = tk.Tk()
@@ -40,18 +44,24 @@ classData = classData.replace(np.nan, 0)
 # Fix section name typo/autocorection
 classData = classData.replace('AND', "ADN")
 # Code male versus female
-classData = classData.replace('F', 1)
-classData = classData.replace('M', 0)
+classData["Sex"] = classData["Sex"].replace({'F': 1, 'M': 0})
 # Code score categories
-classData = classData.replace('Low', -1)
-classData = classData.replace('Medium', 0)
-classData = classData.replace('High', 1)
+classData["Score_Cat"] = classData["Score_Cat"].replace(
+    {'Low': -1,
+     'Medium': 0,
+     'High': 1})
 # Code ethnicity
-classData = classData.replace('White', 0)
-classData = classData.replace('Asian', 1)
-classData = classData.replace('Hispanic or Latino', 2)
-classData = classData.replace('Black or African American', 3)
-classData = classData.replace('American Indian or Alaska Native', 4)
+classData["Ethnicity"] = classData["Ethnicity"].replace(
+    {'^White$': 0, # This regex codes "White" if it's the only ethnicity listed
+     'Asian': 1,
+     'Hispanic or Latino': 2,
+     'Black or African American': 3,
+     'American Indian or Alaska Native': 4},
+     regex = True)
+# Code first generation
+classData["First_Gen"] = classData["First_Gen"].replace('Y', 1)
+# Code EOP
+classData["EOP_Status"] = classData["EOP_Status"].replace('EOP', 1)
 # Code personality
 classData = classData.replace('leader', 1)
 classData.loc[classData.Personality != 1, "Personality"] = 0
@@ -60,10 +70,7 @@ classData.loc[classData.Personality != 1, "Personality"] = 0
 classData["ID"] = classData["Last name"] + ',' + classData["First name"]
 
 # Collect data into a results dataframe
-results = classData[["ID", "Section", "Sex", "Ethnicity",
-                     "ACT Math", "Personality"]]
-# Rename the ACT Math score column to Score_Cat
-results = results.rename(columns = {"ACT Math":"Score_Cat"})
+results = classData[useCols]
 # Group by section
 sectionGrouping = results.groupby("Section")
 

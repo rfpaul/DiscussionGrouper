@@ -4,48 +4,58 @@
 # containing groups optimized for peer learning. Optimized groups are determined by
 # the Non-dominated Sorting Genetic Algorithm (NSGA-II) (see Deb, et al. 2002).
 
-# 2017-2018 Robert Paul and Elise Nishikawa
+# 2017-2019 Robert Paul and Elise Nishikawa
 # Corresponding author: robert.f.paul [[at]] gmail [[dot]] com
 # Licensed under GPL v3, see https://www.gnu.org/licenses/gpl.html
 
 # Input data formatting (see examples in test_data):
-# ID	  Score_Cat    Sex   Ethnicity  Personality
-# A, A         -1      1          0             1
-# B, Q          0      1          4             0
-# C, F          0      1          0             0
-# D, V          1      1          4             0
-# F, C          1      0          3             0
+# ID	  Score_Cat   Sex  Ethnicity  First_Gen  EOP_Status  Personality
+# A, A         -1     1          0          0           1            1
+# B, Q          0     1          4          0           0            0
+# C, F          0     1          0          1           1            0
+# D, V          1     1          4          1           0            0
+# F, C          1     0          3          0           0            0
 # ...
-# CSV file
-# Last name/NetID/hash value or other unique identifier as first column
+# File type: CSV file
+# Last,First/NetID/hash value or other unique identifier as ID column
 # Sex coded as: male=0, female or other=1
-
 # Ethnic background coded as an integer,
-# 0=White, 1=Asian, 2=Latinx, 3=African American
+# 0=White, 1=Asian, 2=Latinx, 3=African American, 4=Native American
+# First generation student coded as a binary, 1 = yes, 0 = no
+# EOP status coded as a binary, 1 = yes, 0 = no
 # Raw math/test scores are categorized as: middle = 0, high = 1, low = -1
 # Personality coded as binary, Leader = 1, other = 0
 
-# IMPORTANT! AL1 and Merit sections use slightly different parameters and
+# IMPORTANT! AL1 and AL2/AL3 sections use slightly different parameters and
 # function definitions. Find these areas in the code where the asterisk *
 # character is repeated 5 times in a row
 
+# !!!!!
 # Optimization criteria (roughly by order of decreasing importance):
 # Group composition:
-# All groups consist of 3 or 4 members (AL1) or 5 or 6 (Merit)
+# All groups are the maximum group size or one less than the max
 # Per group:
 # Sum of sexes is 0 or at least group size - 2 (no more than 2 men in group)
+# No minority ethnicity alone in a group, and ideally at least two minorities
+# present. (If possible, match ethnicity. If not possible 2 individuals of any
+# underrepresented ethnicity in group)
+# No first generation college students alone in a group
+# No EOP students alone in a group
 # For AL1: Score categories of -1 and 1 do not appear in the same group
 # For Merit: No more than 2 score categories of 1 or -1 in the same group
-# No minority ethnicity alone in a group, and ideally two minorities present.
-# (If possible, match ethnicity. If not possible 2 individuals of any
-# underrepresented ethnicity in group)
 # Sum of personality types is 0 or 1 (maximum 1 leader)
 
+# If you're adding or removing objectives, search the code for where the
+# exclamation point character, !, is repeated five times to indicate the
+# critical parts of the code that need to be changed.
+
 # For the generated sets of groups included in the Hall of Fame:
-# Maximize uniqueness between grouping solutions; this is currently done in a fairly "weak" 
-# way that only removes duplicate solutions
+# Maximize uniqueness between grouping solutions; this is currently done in a
+# fairly "weak" way that only removes duplicate solutions, and isn't a criteria
+# fed into the optimization algorithm.
 
 # Some notes on internals and data processing...
+
 # The core data structure used for computation is the R list. The ecr package
 # stores fitness values as matrices, where individuals are the columns and the 
 # rows are the objectives. Temporary data storage and access uses data frames.
@@ -54,8 +64,17 @@
 # to start rewriting or adding things, it's EXTREMELY important that you
 # familiarize yourself with the syntax of constructing and manipulating lists
 # and especially the lapply function.
+
+# I've set up pretty much everything as global variables in scope. I know that's
+# bad practice and can quickly devolve into spaghetti code, but it also greatly
+# reduces the number of parameters I have to pass into functions, makes adding/
+# dropping criteria fairly painless, and makes debugging just slightly easier.
+# It's totally cool if you want to refactor the code to reduce the number of
+# globals, I simply picked this side of the trade-offs to speed up
+# development time. --RFP
+
 # Also I severely exploit the automatic casting of boolean values (TRUE and
-# FALSE) into integer values of 1 and 0 in many vectorized operations.
+# FALSE) into integer values of 1 and 0 in many vectorized operations. --RFP
 
 ## Package imports
 #===============================================================================
@@ -80,7 +99,7 @@ if (!require(foreach)) {
 #===============================================================================
 
 # Encode scores based on percentile rank
-# Deprecated
+# Deprecated, these data are pre-processed
 # CatScores <-function(scores)
 # {
 #   # Initialize everyone to category 0 (middle 80%)
@@ -115,12 +134,13 @@ SplitExtracted <- function(df, c)
 }
 
 # Evaluate fitness for size and number of groups
-# All groups have 3-4 members (AL1) or 5-6 members (Merit)
+# All groups have 3-4 members (AL1) or 5-6 members (AL2/AL3)
 EvalGroupSize <- function(critVals) {
   # Check if all the groups have the appropriate number of members and we
   # have the right number of groups
-  sizes <- lapply(critVals, nrow)
-  sizesOK <- prod(sizes == maxGroupSize | sizes == maxGroupSize - 1)
+  # Get the size of each group
+  sizeVec <- as.numeric(lapply(critVals, nrow))
+  sizesOK <- prod(sizeVec == maxGroupSize | sizeVec == maxGroupSize - 1)
   if(sizesOK) {
     # Number of groups and sizes ok, fitness +1
     return(1)
@@ -129,7 +149,8 @@ EvalGroupSize <- function(critVals) {
   }
 }
 
-# Evaluate "fitness" for Sex compositions
+# Evaluate fitness for Sex compositions
+# Coded as Male = 0, Female = 1
 # No more than 2 men
 EvalSex <- function(critVals)
 {
@@ -137,19 +158,20 @@ EvalSex <- function(critVals)
   sumVec <- as.numeric(lapply(critVals, sum))
   # Get the size of each group
   sizeVec <- as.numeric(lapply(critVals, nrow))
-  # +partialFit to fitness per group with a sum of 0 or sum at least 2
+  # +partialFit to fitness per group with a sum of 0 or sum at least
+  # group size - 2
   # But first we need to redefine the values in the vector
-  sumVec[sumVec == 0 | sumVec >= 2] <- partialFit
-  sumVec[sumVec > partialFit] <- 0
+  sumVec[sumVec == 0 | sumVec >= (sizeVec - 2)] <- partialFit
+  sumVec[sumVec != partialFit] <- 0
   fitnessVal <- sum(sumVec)
   # If all groups meet criteria, fitness set to +1
-  if (length(unique(sumVec)) == 1 & fitnessVal != 0) fitnessVal <- 1
+  if (fitnessVal == partialFit * length(critVals)) fitnessVal <- 1
   # return fitness value
   return(fitnessVal)
 }
 
 # ***** IMPORTANT! Comment out and uncomment the appropriate EvalScore function 
-# definitions for AL1 vs Merit section runs
+# definitions for AL1 vs AL2/AL3 section runs
 
 # Evaluate "fitness" for score distributions (AL1)
 # Score categories of -1 and 1 do not appear in the same group
@@ -157,7 +179,7 @@ EvalScore <- function(critVals)
 {
   # Do -1 and 1 appear together in a group?
   scoreVec <- as.numeric(
-    lapply(critVals, function(x) any(x == 1) & any (x == -1)))
+    lapply(critVals, function(x) any(x == 1) & any(x == -1)))
   # If all the groups are OK, +1 fitness
   if(sum(scoreVec) == 0) {
     return(1)
@@ -167,7 +189,7 @@ EvalScore <- function(critVals)
   }
 }
 
-# Evaluate "fitness" for score distributions (Merit)
+# Evaluate "fitness" for score distributions (AL2/AL3)
 # Score categories of -1 or 1 do not appear more than twice in the same group
 # EvalScore <- function(critVals)
 # {
@@ -186,15 +208,18 @@ EvalScore <- function(critVals)
 # No minority ethnicity alone in a group (if possible, match ethnicity.
 # If not possible at least 2 individuals of any underrepresented ethnicity in group)
 EvalDiversity <- function(critVals) {
+  # Get the size of each group
+  sizeVec <- as.numeric(lapply(critVals, nrow))
   # List of vectors with non-minorities dropped
   ethOnly <- lapply(critVals, function(x) x[x > 0])
   # Number of minorities in each group
   numEth <- as.numeric(lapply(ethOnly, length))
   # Number of unique values in the ethOnly list
   numUniques <- as.numeric(lapply(ethOnly, function(x) length(unique(x))))
-  # Ideally every group will have 2 minorities of the same ethnicity; these are
-  # the indices of these fit values
-  fitIndices <- which(numEth == 2 & numUniques >= 1)
+  # Ideally every group will have at least 2 minorities of the same ethnicity
+  # but doesn't exclusively contain one underrepresented group; these are the
+  # indices of these fit values
+  fitIndices <- which(numEth >= 2 & numEth < sizeVec & numUniques == 1)
   # Every group is fit, +1 fitness value
   if (length(fitIndices) == nGroups) {
     return(1)
@@ -202,40 +227,59 @@ EvalDiversity <- function(critVals) {
     # Partial fitness for each group meeting criteria
     fitnessVal <- length(fitIndices) * partialFit
     # Secondary fit values; at least 2 minorities of different ethnicities
-    # This criterion is worth 75% of the partial fitness for matching ethnicity
-    fitIndices <- which(numEth >= 2 & numUniques >= 2)
-    fitnessVal <- fitnessVal + (length(fitIndices) * partialFit  * 0.75)
+    # This criterion is worth 90% of the partial fitness for matching ethnicity
+    fitIndices <- which(numEth >= 2 & numEth < sizeVec & numUniques >= 2)
+    fitnessVal <- fitnessVal + (length(fitIndices) * partialFit  * 0.90)
     return(fitnessVal)
   }
+}
+
+# Evaluate "fitness" that the groups have either no first generation students
+# or at least least two; same criteria for EOP status
+EvalFirstGensEOP <- function(critVals)
+{
+  # Sum the first generation student or EOP category and cast the list as
+  # a vector
+  sumVec <- as.numeric(lapply(critVals, sum))
+  # +partialFit to fitness per group with a sum of 0 or greater than 1
+  # But first we need to redefine the values in the vector
+  sumVec[sumVec == 0 | sumVec > 1] <- partialFit
+  sumVec[sumVec != partialFit] <- 0
+  fitnessVal <- sum(sumVec)
+  # If all groups meet criteria, fitness set to +1
+  if (fitnessVal == partialFit * length(critVals)) fitnessVal <- 1
+  # return fitness value
+  return(fitnessVal)
 }
 
 # Evaluate "fitness" for only including at most one "leader" personality
 EvalLeader <- function(critVals)
 {
   # Sum the leader category and cast the list as a vector
-  critVals <- as.numeric(lapply(critVals, sum))
+  sumVec <- as.numeric(lapply(critVals, sum))
   # +partialFit to fitness per group with a sum of 1 or 0
   # But first we need to redefine the values in the vector
-  critVals[critVals <= 1] <- partialFit
-  critVals[critVals > partialFit] <- 0
-  fitnessVal <- sum(critVals)
+  sumVec[sumVec <= 1] <- partialFit
+  sumVec[sumVec > partialFit] <- 0
+  fitnessVal <- sum(sumVec)
   # If all groups meet criteria, fitness set to +1
-  if (fitnessVal == partialFit * length(critVals)) fitnessVal = 1
+  if (fitnessVal == partialFit * length(critVals)) fitnessVal <- 1
   # return fitness value
   return(fitnessVal)
 }
 
 # All the fitness functions wrapped up to return a vector of fitness values
-# **RFP: I know I probably shouldn't use all these globals in here but I didn't want to pass
-# a ton of parameters into this and potentially muck things up badly
 MetaFitness <- function(indiv)
 {
   currGroup <- AttachCol(indiv)
   # Get a vector of all the fitness values
+  # !!!!! 
   result <- c(EvalGroupSize(SplitExtracted(currGroup, "ID")),
               EvalSex(SplitExtracted(currGroup, "Sex")),
-              EvalScore(SplitExtracted(currGroup, "Score_Cat")),
               EvalDiversity(SplitExtracted(currGroup, "Ethnicity")),
+              EvalFirstGensEOP(SplitExtracted(currGroup, "First_Gen")),
+              EvalFirstGensEOP(SplitExtracted(currGroup, "EOP_Status")),
+              EvalScore(SplitExtracted(currGroup, "Score_Cat")),
               EvalLeader(SplitExtracted(currGroup, "Personality")))
   # Return the weighted results
   return(result * weighting)
@@ -309,38 +353,42 @@ VecsToLists <- function(vecList) {
 
 # ***** IMPORTANT! Change the maxGroupSize parameter for AL1 vs Merit runs!
 # What is the maximum size groups should be? (AL1)
-maxGroupSize <- 4
-# What is the maximum size groups should be? (Merit)
+# maxGroupSize <- 4
+# What is the maximum size groups should be? (Merit/AL2/AL3)
 # maxGroupSize <- 6
+# Alternative group size
+maxGroupSize <- 5
 
 # Genetic algorithm variable values
-MU = 900L # Number of individuals # default: 900
-LAMBDA = 400L # Number of offspring # default: 400
-MAX.ITER = 1200L # Max number of generations # default: 1200
-OBJS = 5L # Number of objectives
+# n.b., you can probably get away with a faster run with lower values, the
+# default parameters are for a more exhaustive search
+MU <- 700L # Number of individuals # default: 900
+LAMBDA <- 300L # Number of offspring # default: 400
+MAX.ITER <- 800L # Max number of generations # default: 1200
+# !!!!!
+OBJS <- 7L # Number of objectives
+P.RECOMBINE <- 0.8 # Crossover probability, default = 0.8
+P.MUTATION <- 0.6 # Mutate probability, default = 0.3
 
 # Relative weighting of each objective
+# !!!!!
 weighting <-  c(20, # Correct number and sizes of groups
                 10, # No more than 2 men in the group
-                8, # No high and low score individuals together
-                5, # Within group diversity
+                8, # Within group ethnic diversity
+                8, # First generation students are not alone in a group
+                8, # EOP students are not alone in a group
+                5, # No high and low score individuals together
                 1) # At most 1 leader
 ref.point <- weighting # Ideal fitness values
+# Text string tags of the objectives
+# !!!!!
 weightTags <- c("Group size:",
                 "Gender:",
-                "Math scores:",
                 "Diversity:",
+                "First generation:",
+                "EOP:",
+                "Math scores:",
                 "Personality:")
-
-# Benchmark values between 0-1 used as the cutoff of Honorable Mention solutions
-# i.e. fitness values greater than or equal to weighting * honMentionBench 
-# are added to Honorable Mention solutions
-# These values are overwritten halfway through the run
-honMentionBench <- c(1.0, # Correct number and sizes of groups
-                     0.4, # No more than 2 men in the group
-                     0, # No high and low score individuals together
-                     0.2, # Within group diversity
-                     0.1) # At most 1 leader)
 
 # Ask for input folder
 inputDir <- tk_choose.dir(
@@ -357,7 +405,7 @@ outputDir <- tk_choose.dir(
 # # Open the file
 # classData  <- read.csv(inputPath, header=TRUE)
 
-# Loop through all available input folders in inputDir
+# Loop through all available input files in inputDir
 for (j in seq_len(length(classFiles))) {
   # Progress message
   print(paste("Processing", classFiles[j]))
@@ -377,10 +425,10 @@ for (j in seq_len(length(classFiles))) {
   
   # Set up and run genetic algorithm
   # What should be the additive value of partial (per group) fitness?
-  partialFit <- .5 / nGroups
+  partialFit <- 0.5 / nGroups
   
   # Toolbox initialization
-  # MetaFitness gives our vector of fitnesses, 5 objectives, maximize objectives
+  # MetaFitness gives our vector of fitnesses, 7 objectives, maximize objectives
   control <- initECRControl(MetaFitness, n.objectives = OBJS, minimize = FALSE)
   # Initialize the mutation, survival, and reproduction operations
   control <- registerECROperator(control, "mutate", mutScramble)
@@ -418,16 +466,30 @@ for (j in seq_len(length(classFiles))) {
   hof <- list()
   honMention <- list()
   
+  # Benchmark values between 0-1 used as the cutoff of Honorable Mention solutions
+  # i.e. fitness values greater than or equal to weighting * honMentionBench 
+  # are added to Honorable Mention solutions
+  # N.B., in current implementation, these values are overwritten halfway
+  # through the run (at generation MAX.ITER / 2)
+  # !!!!!
+  honMentionBench <- c(1.0, # Correct number and sizes of groups
+                       0.4, # No more than 2 men in the group
+                       0.4, # Within group diversity
+                       0.4, # First generation matching
+                       0.4, # EOP matching
+                       0.4, # No high and low score individuals together
+                       0.4) # At most 1 leader)
+  
   for (i in seq_len(MAX.ITER)) {
     # Generate offspring by recombination and mutation
     offspring <- recombinate(control = control, 
                              inds = population,
                              fitness = fitness, 
                              lambda = LAMBDA,
-                             p.recomb = 0.8)
+                             p.recomb = P.RECOMBINE)
     offspring <- mutate(control,
                         offspring,
-                        p.mut = 0.3)
+                        p.mut = P.MUTATION)
     
     # Calculate costs of new arrangment population
     fitness.o <- evaluateFitness(control, offspring)
@@ -454,7 +516,7 @@ for (j in seq_len(length(classFiles))) {
     
     # Get the honorable mention benchmark based on mean population values once
     # we're halfway through the iterations
-    if (propDone == 0.5) {
+    if (i == ceiling(MAX.ITER/2)) {
       honMentionBench <- rowMeans(fitness) / weighting
     }
 
@@ -506,13 +568,15 @@ for (j in seq_len(length(classFiles))) {
   # ...
   
   # Output to file
-  # Output file format: Text file with group arrangements and IDs listed for
-  # each group
+  # Output file format: Text file with group arrangements, fitness values, and
+  # IDs listed for each group
   # Best_A1
+  # Fitness_criteron_1: value ... Fitness_criterion_n: value
   # 1: B,Q; L,A; D,S; F,M; A,A
   # 2: D,V; F,C; W,L; O,M
   # ...
   # Arrangement_n
+  # Fitness_criteron_1: value ... Fitness_criterion_n: value
   # ...
   
   # Generate output name and path
