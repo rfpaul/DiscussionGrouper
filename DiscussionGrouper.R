@@ -20,7 +20,8 @@
 # Last,First/NetID/hash value or other unique identifier as ID column
 # Sex coded as: male=0, female or other=1
 # Ethnic background coded as an integer,
-# 0=White, 1=Asian, 2=Latinx, 3=African American, 4=Native American
+# 0=White, 1=Asian, 2=Latinx, 3=African American, 4=Native American,
+# 5 = Pacific Islander
 # First generation student coded as a binary, 1 = yes, 0 = no
 # EOP status coded as a binary, 1 = yes, 0 = no
 # Raw math/test scores are categorized as: middle = 0, high = 1, low = -1
@@ -151,7 +152,7 @@ EvalGroupSize <- function(critVals) {
 
 # Evaluate fitness for Sex compositions
 # Coded as Male = 0, Female = 1
-# No more than 2 men
+# No more than 2 men (in general) or 1 male in a group of 3
 EvalSex <- function(critVals)
 {
   # Sum the Sex composition of each group
@@ -161,6 +162,8 @@ EvalSex <- function(critVals)
   # +partialFit to fitness per group with a sum of 0 or sum at least
   # group size - 2
   # But first we need to redefine the values in the vector
+  sizeVec[sizeVec == 3] <- 4 # For 3-person groups, add a nonexistant member to
+  # prevent a 2-male 1-female group from being a valid solution
   sumVec[sumVec == 0 | sumVec >= (sizeVec - 2)] <- partialFit
   sumVec[sumVec != partialFit] <- 0
   fitnessVal <- sum(sumVec)
@@ -353,18 +356,18 @@ VecsToLists <- function(vecList) {
 
 # ***** IMPORTANT! Change the maxGroupSize parameter for AL1 vs Merit runs!
 # What is the maximum size groups should be? (AL1)
-# maxGroupSize <- 4
+maxGroupSize <- 4
 # What is the maximum size groups should be? (Merit/AL2/AL3)
 # maxGroupSize <- 6
 # Alternative group size
-maxGroupSize <- 5
+# maxGroupSize <- 5
 
 # Genetic algorithm variable values
 # n.b., you can probably get away with a faster run with lower values, the
 # default parameters are for a more exhaustive search
-MU <- 700L # Number of individuals # default: 900
+MU <- 600L # Number of individuals # default: 900
 LAMBDA <- 300L # Number of offspring # default: 400
-MAX.ITER <- 800L # Max number of generations # default: 1200
+MAX.ITER <- 500L # Max number of generations # default: 1200
 # !!!!!
 OBJS <- 7L # Number of objectives
 P.RECOMBINE <- 0.8 # Crossover probability, default = 0.8
@@ -516,8 +519,11 @@ for (j in seq_len(length(classFiles))) {
     
     # Get the honorable mention benchmark based on mean population values once
     # we're halfway through the iterations
+    # !!!!!
     if (i == ceiling(MAX.ITER/2)) {
       honMentionBench <- rowMeans(fitness) / weighting
+      honMentionBench[1] <- 1.0 # Keep the first criterion (class size) as
+      # a requirement
     }
 
     # Update honorable mention after we're halfway through iterating
@@ -554,7 +560,7 @@ for (j in seq_len(length(classFiles))) {
   names(results) <- c('ID',
                       paste0("Best_Grouping_", labels)[0:lens[1]],
                       paste0("Good_Grouping_", labels)[0:lens[2]],
-                      paste0("Pareto_Grouping_", labels)[0:lens[3]])
+                      paste0("Trade-off_Grouping_", labels)[0:lens[3]])
   
   # Now we have a results data frame--
   # results dataframe format: IDs with numeric group assignments over n columns

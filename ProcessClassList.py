@@ -10,7 +10,7 @@ from tkinter import filedialog
 from tkinter import messagebox
 
 # What is the current semester?
-semester = "SP19"
+semester = "FA19"
 
 # Which columns are we pulling out?
 useCols = ["ID", "Section", "Sex", "Ethnicity", "First_Gen", "EOP_Status",
@@ -46,7 +46,7 @@ classData = classData.replace('AND', "ADN")
 # Code male versus female
 classData["Sex"] = classData["Sex"].replace({'F': 1, 'M': 0})
 # Code score categories
-classData["Score_Cat"] = classData["Score_Cat"].replace(
+classData["Score_Cat"] = classData["Score_Cat"].astype(str).replace(
     {'Low': -1,
      'Medium': 0,
      'High': 1})
@@ -56,7 +56,8 @@ classData["Ethnicity"] = classData["Ethnicity"].replace(
      'Asian': 1,
      'Hispanic or Latino': 2,
      'Black or African American': 3,
-     'American Indian or Alaska Native': 4},
+     'American Indian or Alaska Native': 4,
+     'Native Hawaiian or Other Pacific Islander': 5},
      regex = True)
 # Code first generation
 classData["First_Gen"] = classData["First_Gen"].replace('Y', 1)
